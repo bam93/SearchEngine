@@ -121,7 +121,7 @@ THRESHOLD_LOW = 0.40        # Below this, fallback to LLM without context
 Make sure you install:
 
 ```bash
-pip install streamlit sentence-transformers chromadb scikit-learn beautifulsoup4 requests bs4
+pip install streamlit sentence-transformers chromadb scikit-learn beautifulsoup4 requests bs4 sentence_transformers
 ```
 
 Also install and run [Ollama](https://ollama.com/) locally for LLM support.
