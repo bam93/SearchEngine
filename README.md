@@ -6,6 +6,7 @@ This project implements a full **Retrieval-Augmented Generation (RAG)** pipeline
 
 ## 📁 Project Structure
 
+```bash
 .
 ├── ragPipelineOllama.py       # Script to crawl, enrich, and index web content
 ├── searchEngineAPI.py         # Streamlit-based search and chat UI
@@ -13,7 +14,6 @@ This project implements a full **Retrieval-Augmented Generation (RAG)** pipeline
 ├── chroma_db/                 # Vector store (created at runtime)
 ├── enriched_pages.jsonl       # JSONL file containing enriched chunks (created at runtime)
 ```
-
 
 ## 🚀 Features
 
