@@ -101,7 +101,7 @@ Make sure Ollama is running locally with your preferred model:
 
 ```bash
 ollama serve
-ollama run mistral:7b
+ollama run deepseek-r1:14b
 ```
 
 

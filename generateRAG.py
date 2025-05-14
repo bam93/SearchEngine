@@ -1,3 +1,12 @@
+# -----------------------------------------------------------------------------
+# Author      : Anne-Laure MEALIER
+# File        : ragPipelineOllama.py
+# Description : Crawl and enrich web documentation using LLM, store in ChromaDB
+# Created     : 2024-05-14
+# License     : MIT
+# -----------------------------------------------------------------------------
+
+
 import os
 import requests
 from bs4 import BeautifulSoup
