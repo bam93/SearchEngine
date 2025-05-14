@@ -1,154 +1,145 @@
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
-import uuid
-import time
-import json
+import streamlit as st
 import chromadb
-from chromadb.config import Settings
-from chromadb.utils import embedding_functions
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+import subprocess
 
+# ----------------------------
+# Config
+# ----------------------------
+EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
+LLM_MODEL = "mistral:7b"
+TOP_K = 5
+THRESHOLD_GOOD = 0.70
+THRESHOLD_LOW = 0.40
+SUMMARY_WEIGHT = 0.7
+KEYWORDS_WEIGHT = 0.3
 
-def run_pipeline(
-    base_url: str,
-    jsonl_output_path: str = "enriched_pages.jsonl",
-    chroma_collection_name: str = "web_chunks",
-    model: str = "deepseek-r1:14b"
-):
+# Streamlit layout and style
+st.set_page_config(page_title="🔍 AI Documentation Assistant", layout="wide")
+st.markdown(
     """
-    Full pipeline to:
-    - Crawl a subsite
-    - Extract and chunk text
-    - Enrich each chunk with summary and keywords using Ollama
-    - Save enriched chunks to a JSONL file
-    - Index documents into ChromaDB vector store
-    """
+    <style>
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    .title {
+        font-size: 2.2em;
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: 10px;
+    }
+    .score-bar {
+        height: 16px;
+        border-radius: 8px;
+        background: linear-gradient(to right, #10b981, #3b82f6);
+    }
+    </style>
+    """, unsafe_allow_html=True
+)
 
-    # === Ollama Call ===
-    def ollama_generate(prompt, model=model):
-        response = requests.post(
-            'http://localhost:11434/api/generate',
-            json={'model': model, 'prompt': prompt, 'stream': False}
-        )
-        return response.json()['response']
+# ----------------------------
+# Load models & collection
+# ----------------------------
+chroma_client = chromadb.PersistentClient(path="./chroma_db")
+collection = chroma_client.get_collection(name="web_chunks")
+embedder = SentenceTransformer(EMBEDDING_MODEL)
 
-    # === Extract summary + keywords from text ===
-    def extract_summary_and_keywords(text):
-        prompt = f"""
-Here is a web article:
+# ----------------------------
+# Functions
+# ----------------------------
 
-{text[:1500]}
+def get_top_k_matches(question, k=TOP_K):
+    query_embedding = embedder.encode([question])[0]
+    all_docs = collection.get()
 
-Please return:
-1. A short summary (3-5 sentences)
-2. A list of 5 to 10 keywords
+    summaries = [meta.get("summary", "") for meta in all_docs["metadatas"]]
+    keywords_list = [", ".join(meta.get("keywords", [])) for meta in all_docs["metadatas"]]
+    ids = all_docs["ids"]
+    metadatas = all_docs["metadatas"]
+    texts = all_docs["documents"]
 
-Expected JSON format:
-{{
-  "summary": "...",
-  "keywords": ["word1", "word2", ...]
-}}
+    summary_embeddings = embedder.encode(summaries)
+    keywords_embeddings = embedder.encode(keywords_list)
+
+    results = []
+    for i in range(len(summaries)):
+        combined_embedding = SUMMARY_WEIGHT * summary_embeddings[i] + KEYWORDS_WEIGHT * keywords_embeddings[i]
+        similarity = cosine_similarity([query_embedding], [combined_embedding])[0][0]
+
+        results.append({
+            "id": ids[i],
+            "similarity": float(similarity),
+            "summary": summaries[i],
+            "text": texts[i],
+            "metadata": metadatas[i]
+        })
+
+    return sorted(results, key=lambda x: x["similarity"], reverse=True)[:k]
+
+def generate_answer_with_llm(context, question):
+    prompt = f"""Context:
+{context}
+
+Question: {question}
+
+Give a concise and accurate answer, listing helpful links and keywords when relevant.
 """
-        try:
-            raw = ollama_generate(prompt)
-            json_part = raw[raw.find('{'):raw.rfind('}')+1]
-            return json.loads(json_part)
-        except Exception as e:
-            print(f"LLM error: {e}")
-            return {"summary": "", "keywords": []}
+    result = subprocess.run(["ollama", "run", LLM_MODEL], input=prompt.encode("utf-8"), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return result.stdout.decode("utf-8").strip() if result.returncode == 0 else f"LLM error: {result.stderr.decode('utf-8')}"
 
-    # === Paragraph-based text chunking ===
-    def split_into_paragraphs(text, max_len=512):
-        paras = [p.strip() for p in text.split('\n') if p.strip()]
-        chunks, current = [], ''
-        for para in paras:
-            if len(current) + len(para) < max_len:
-                current += ' ' + para
-            else:
-                chunks.append(current.strip())
-                current = para
-        if current:
-            chunks.append(current.strip())
-        return chunks
+def generate_answer_without_context(question):
+    prompt = f"""Answer the following question as best as you can, even without any context:
 
-    # === Crawl subsite and save JSONL ===
-    visited, to_visit = set(), set([base_url])
-    with open(jsonl_output_path, 'w', encoding='utf-8') as f_out:
-        while to_visit:
-            url = to_visit.pop()
-            if url in visited:
-                continue
+Question: {question}
+"""
+    result = subprocess.run(["ollama", "run", LLM_MODEL], input=prompt.encode("utf-8"), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return result.stdout.decode("utf-8").strip() if result.returncode == 0 else f"LLM error: {result.stderr.decode('utf-8')}"
 
-            try:
-                response = requests.get(url)
-                visited.add(url)
+# ----------------------------
+# UI
+# ----------------------------
 
-                if response.status_code == 200:
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    text = soup.get_text(separator='\n', strip=True)
-                    title = soup.title.string.strip() if soup.title else ''
-                    web_path = urlparse(url).path
-                    enrichments = extract_summary_and_keywords(text)
+st.markdown("<div class='title'>🤖 AI Documentation Search Assistant</div>", unsafe_allow_html=True)
+query = st.text_input("💬 Ask your question:", placeholder="How do I configure a Python environment?")
 
-                    # Process and save each paragraph chunk
-                    for idx, chunk in enumerate(split_into_paragraphs(text)):
-                        doc = {
-                            "id": str(uuid.uuid4()),
-                            "url": url,
-                            "web_path": web_path,
-                            "title": title,
-                            "text": chunk,
-                            "summary": enrichments.get("summary", ""),
-                            "keywords": enrichments.get("keywords", []),
-                            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-                            "chunk_id": idx
-                        }
-                        f_out.write(json.dumps(doc, ensure_ascii=False) + '\n')
+if st.button("🔎 Run Search"):
+    if not query.strip():
+        st.warning("Please enter a question.")
+    else:
+        top_docs = get_top_k_matches(query)
+        best_similarity = top_docs[0]["similarity"]
 
-                    # Collect all links to crawl within the same domain
-                    for link in soup.find_all('a', href=True):
-                        full_url = urljoin(url, link['href'])
-                        if full_url.startswith(base_url) and full_url not in visited:
-                            to_visit.add(full_url)
+        st.markdown("### 📄 Top Matching Documents")
+        for doc in top_docs:
+            similarity_pct = round(doc["similarity"] * 100, 2)
 
-                time.sleep(1)  # avoid hammering the server
+            with st.expander(f"📘 {doc['metadata']['title'] or 'Untitled Page'} — Similarity: {similarity_pct:.2f}%"):
+                st.markdown(f"🔗 [Open Page]({doc['metadata']['url']})")
+                st.markdown(f"**Summary:** {doc['summary']}")
+                st.markdown(f"**Keywords:** {', '.join(doc['metadata'].get('keywords', []))}")
+                st.progress(doc["similarity"])
 
-            except Exception as e:
-                print(f"Error with {url}: {e}")
+        # LLM response section
+        if best_similarity >= THRESHOLD_GOOD:
+            st.success("✅ High-confidence match. Generating LLM response with context...")
+            full_context = "\n\n".join([d["summary"] for d in top_docs])
+            answer = generate_answer_with_llm(full_context, query)
+            st.markdown("### 🧠 LLM Answer (High Confidence)")
+            st.info(answer)
 
-    # === Create ChromaDB vector store ===
-    client = chromadb.Client(Settings(persist_directory='./chroma_db'))
-    collection = client.get_or_create_collection(
-        name=chroma_collection_name,
-        embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="google/bigbird-roberta-large"  
-            # altaidevorg/bge-m3-distill-8l
-            # sentence-transformers/all-mpnet-base-v2
-            # google/bigbird-roberta-large
-            # OrdalieTech/Solon-embeddings-large-0.1   
-        )
-    )
+        elif best_similarity >= THRESHOLD_LOW:
+            st.warning("⚠️ Medium-confidence match. You may still try the LLM with context.")
+            if st.button("🛠 Generate LLM Answer Anyway"):
+                full_context = "\n\n".join([d["summary"] for d in top_docs])
+                answer = generate_answer_with_llm(full_context, query)
+                st.markdown("### 🧠 LLM Answer (Medium Confidence)")
+                st.info(answer)
 
-    # Read the enriched JSONL and load into vector store
-    with open(jsonl_output_path, 'r', encoding='utf-8') as f:
-        documents, metadatas, ids = [], [], []
-        for line in f:
-            entry = json.loads(line)
-            documents.append(entry['text'])
-            metadatas.append({
-                "title": entry['title'],
-                "url": entry['url'],
-                "keywords": entry['keywords'],
-                "summary": entry['summary'],
-                "web_path": entry['web_path']
-            })
-            ids.append(entry['id'])
-
-        collection.add(documents=documents, metadatas=metadatas, ids=ids)
-
-    print("Pipeline completed: Crawled, enriched, chunked, saved and indexed.")
-
-
-if __name__ == "__main__":
-    # Example usage
-    run_pipeline(base_url="https://doc.cc.in2p3.fr/")
+        else:
+            st.error("🚫 No relevant match found. Generating LLM response without context.")
+            answer = generate_answer_without_context(query)
+            st.markdown("### 🧠 LLM Answer (No Context)")
+            st.info(answer)
