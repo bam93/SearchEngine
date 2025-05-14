@@ -1,140 +1,170 @@
-# 🔍 Conversational Search over Documentation
+# 🔍 Conversational Search Engine for Documentation
 
-This project provides a full pipeline and Streamlit interface for building a **RAG (Retrieval-Augmented Generation)** system over technical documentation hosted at [https://doc.cc.in2p3.fr/](https://doc.cc.in2p3.fr/). It scrapes the site, builds semantic vector embeddings, and allows users to ask questions and receive LLM-generated answers based on retrieved relevant content.
+This project implements a full **Retrieval-Augmented Generation (RAG)** pipeline using Python, designed to crawl technical documentation, embed and index its content, and provide a conversational interface for querying the knowledge base using a large language model (LLM).
 
 
-## 📦 Project Structure
 
+## 📁 Project Structure
+
+.
+├── ragPipelineOllama.py       # Script to crawl, enrich, and index web content
+├── searchEngineAPI.py         # Streamlit-based search and chat UI
+├── logs/                      # Automatically created log files of pipeline execution
+├── chroma_db/                 # Vector store (created at runtime)
+├── enriched_pages.jsonl       # JSONL file containing enriched chunks (created at runtime)
 ```
-project/
-│
-├── pipeline.py            # Scrapes the site, chunks text, generates summaries/keywords, builds Chroma vector store
-├── app.py                 # Streamlit interface for querying the vector store and getting LLM responses
-├── chroma_db/             # Persisted ChromaDB collection
-├── enriched_pages.jsonl   # Enriched and chunked text content (optional intermediate file)
-├── README.md              # This documentation
-```
+
+
+## 🚀 Features
+
+* ✅ Web crawler with HTML content filtering
+* ✅ Chunking of text content into manageable paragraphs
+* ✅ Summary and keyword extraction using a local LLM via Ollama
+* ✅ Storage in [ChromaDB](https://www.trychroma.com/) vector database
+* ✅ Query interface with document similarity scoring
+* ✅ Conversational LLM responses with fallback strategies
+* ✅ Real-time execution progress and ETA estimation
+* ✅ Logging to both console and `logs/` folder
 
 ## 🧠 Technologies Used
 
-| Component     | Tech/Model                                                       |
-| ------------- | ---------------------------------------------------------------- |
-| **Scraper**   | `requests`, `BeautifulSoup`                                      |
-| **Embedding** | `sentence-transformers/all-mpnet-base-v2`                        |
-| **Vector DB** | [ChromaDB](https://www.trychroma.com/)                           |
-| **LLM**       | [Ollama](https://ollama.com) with `mistral:7b`, `deepseek`, etc. |
-| **Frontend**  | [Streamlit](https://streamlit.io/)                               |
+| Component  | Tech Stack / Tools                              |
+| ---------- | ----------------------------------------------- |
+| Crawler    | `requests`, `BeautifulSoup`                     |
+| Chunking   | Paragraph-based with token limits               |
+| Enrichment | `Ollama` (e.g. `mistral:7b`, `deepseek`)        |
+| Embeddings | `sentence-transformers`, `ChromaDB`             |
+| Interface  | `Streamlit`                                     |
+| Similarity | Weighted cosine similarity (summary + keywords) |
+| Logging    | Python `logging`, auto-named `.log` files       |
 
 
 
-## ⚙️ How It Works
+## 🧪 How It Works
 
-### Step 1: Scraping and Indexing
+### 1. `ragPipelineOllama.py`: Build the Vector Store
 
-The `pipeline.py` script:
+This script performs the following:
 
-* Crawls all HTML pages starting from a base URL.
-* Extracts text, chunks it by paragraph.
-* Calls a local LLM (via Ollama) to generate:
+* Crawls a given base URL (e.g., [https://doc.cc.in2p3.fr/](https://doc.cc.in2p3.fr/))
+* Skips irrelevant file types (images, binaries, archives, etc.)
+* Extracts main content and chunks it into paragraphs
+* Sends each page to a local LLM via Ollama to get:
 
-  * A short summary (3–5 sentences)
-  * A list of keywords (5–10)
-* Saves everything to a JSONL file.
-* Encodes each chunk into vectors using a SentenceTransformer.
-* Stores vectors and metadata into a **ChromaDB** persistent collection.
+  * ✅ A short summary
+  * ✅ A list of keywords
+* Saves each chunk into a `.jsonl` file
+* Creates embeddings (summary + keywords) and stores everything in ChromaDB
 
-### Step 2: Search and Chat Interface
+You can monitor progress via:
 
-The `app.py` Streamlit app:
+* Console and log output (page/chunk counts, ETA)
+* Automatically generated logs under `logs/`
 
-* Takes a natural language question from the user.
-* Encodes it into a query embedding.
-* Retrieves the top-k relevant chunks from the vector store using a **weighted embedding**:
+### 2. `searchEngineAPI.py`: Ask Questions via UI
 
-```
-combined_embedding = 0.7 * summary_embedding + 0.3 * keyword_embedding
-```
+This script runs a Streamlit app that allows users to:
 
-* Based on similarity score:
+* Input a natural language question
+* Find the top-5 most relevant document chunks (based on weighted summary/keyword embeddings)
+* View document info (summary, keywords, source URL)
+* Get LLM-generated answers depending on similarity level:
 
-  * ✅ **High (≥ 70%)**: Answer with LLM + context.
-  * ⚠️ **Medium (40–69%)**: Show results and let user trigger LLM.
-  * 🔴 **Low (< 40%)**: Generate answer using LLM only, no context.
-
-
-## 🚀 Quick Start
-
-### 1. Run the data pipeline
-
-```bash
-python pipeline.py
-```
-
-This will create and store the vector collection in `./chroma_db`.
-
-### 2. Start the app
-
-```bash
-streamlit run app.py
-```
-
-Make sure the Ollama server is running locally (`ollama serve`) and the models are available (e.g., `mistral`, `deepseek`, etc.).
+  * 🔵 High (≥ 70%): direct LLM answer using context
+  * 🟡 Medium (40–69%): suggestion to ask LLM
+  * 🔴 Low (< 40%): LLM response without context
 
 
-## 🧪 Example Query Flow
+## 📦 Setup Instructions
 
-1. User inputs: **"How do I configure a Python environment?"**
-2. The system finds top 5 relevant chunks (summaries + keywords).
-3. If confidence is high, LLM answers using these summaries.
-4. Otherwise, user can choose to invoke LLM with or without context.
+### Requirements
 
-
-## 📊 Similarity Logic
-
-* Embeddings are generated for both:
-
-  * **Summary** of a chunk
-  * **Keywords** extracted from the same chunk
-
-* These are combined:
-
-  ```python
-  0.7 * summary_embedding + 0.3 * keyword_embedding
-  ```
-
-* Cosine similarity is computed with the query embedding.
-
-
-## 🔧 Configuration Options
-
-You can adjust these in `app.py`:
-
-```python
-SUMMARY_WEIGHT = 0.7        # Controls weight of summary in similarity calc
-KEYWORDS_WEIGHT = 0.3       # Controls weight of keywords
-THRESHOLD_GOOD = 0.70       # Above this, use LLM confidently
-THRESHOLD_LOW = 0.40        # Below this, fallback to LLM without context
-```
-
-## 📁 Requirements
-
-Make sure you install:
+Install dependencies:
 
 ```bash
 pip install streamlit sentence-transformers chromadb scikit-learn beautifulsoup4 requests bs4 sentence_transformers
 ```
 
-Also install and run [Ollama](https://ollama.com/) locally for LLM support.
+Dependencies include:
+
+* `requests`
+* `beautifulsoup4`
+* `chromadb`
+* `sentence-transformers`
+* `scikit-learn`
+* `streamlit`
+* `numpy`
+
+### Start Ollama Server
+
+Make sure Ollama is running locally with your preferred model:
+
+```bash
+ollama serve
+ollama run mistral:7b
+```
 
 
-## 🛠️ TODO / Next Steps
+## 🧰 Usage
 
-* [ ] Add ability to tweak weights in UI.
-* [ ] Visualize similarity scores as progress bars.
-* [ ] Export conversation or results.
-* [ ] Add PDF/document support.
+### Step 1: Run the Data Pipeline
+
+```bash
+python ragPipelineOllama.py
+```
+
+This will generate:
+
+* `enriched_pages.jsonl`
+* Populate your local ChromaDB vector store
+
+### Step 2: Launch the Streamlit UI
+
+```bash
+streamlit run searchEngineAPI.py
+```
+
+Navigate to `http://localhost:8501` in your browser and start asking questions!
+
+
+## 📊 Logs and Monitoring
+
+* Execution logs are written both to console and to timestamped files under `./logs/`
+* Example: `logs/pipeline_log_20240514_1830.log`
+* These logs include:
+
+  * Pages processed
+  * Chunks generated
+  * ETA estimation
+  * Errors (if any)
+
+
+## 📌 Example Use Case
+
+> Ask: **"How do I install a Python package with Conda?"**
+
+You’ll see:
+
+* The top matching document(s)
+* Their summary and keywords
+* An AI-generated response using context, if available
+
+
+## 🔒 Limitations & Considerations
+
+* Only HTML pages are processed — binary formats (PDFs, images, etc.) are skipped
+* LLM must be running locally via [Ollama](https://ollama.com/)
+* Large crawls may consume considerable time and memory
+
+
+## 📁 Optional Improvements
+
+* Add PDF parsing support with `PyMuPDF` or `pdfminer`
+* Use language-specific chunking (e.g., sentence-based for multi-lingual support)
+* Add vector search filtering by topic, date, or section
+* Support multiple base URLs or domains
 
 
 ## 📝 License
 
-MIT License. Open for academic and non-commercial usage.
+MIT License. Use freely for research, prototyping, or internal tooling.
