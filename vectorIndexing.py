@@ -114,6 +114,9 @@ def index_vector_store(
         index_end = time.time()
         logger.info(f"✅ Vector store built in {index_end - index_start:.2f} seconds")
         logger.info(f"📚 Total documents indexed: {total}")
+        
+        client.persist()
+        logger.info("💾 Vector store persisted to disk.")
 
     except Exception as e:
         logger.error(f"❌ Failed to index vector store: {e}")
@@ -126,3 +129,4 @@ if __name__ == "__main__":
     index_vector_store(jsonl_input_path=jsonl_path)
     total = time.time() - start_time
     logger.info(f"🎉 Indexing process completed in {total:.2f} seconds")
+

@@ -53,7 +53,9 @@ def run_pipeline(
     base_url: str,
     jsonl_output_path: str = "enriched_pages.jsonl",
     chroma_collection_name: str = "web_chunks",
-    model: str = "deepseek-r1:14b"
+    model: str = "deepseek-r1:14b",
+    embedding_model: str = "sentence-transformers/all-mpnet-base-v2",
+    batch_size: int = 4000
 ):
     logger.info("🚀 Starting pipeline")
 
@@ -184,12 +186,12 @@ Expected JSON format:
     collection = client.get_or_create_collection(
         name=chroma_collection_name,
         embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="sentence-transformers/all-mpnet-base-v2"
+            model_name=embedding_model
         )
     )
 
+    documents, metadatas, ids = [], [], []
     with open(jsonl_output_path, 'r', encoding='utf-8') as f:
-        documents, metadatas, ids = [], [], []
         for line in f:
             entry = json.loads(line)
             documents.append(entry['text'])
@@ -202,13 +204,21 @@ Expected JSON format:
             })
             ids.append(entry['id'])
 
-        collection.add(documents=documents, metadatas=metadatas, ids=ids)
+    total = len(documents)
+    for i in range(0, total, batch_size):
+        batch_docs = documents[i:i + batch_size]
+        batch_meta = metadatas[i:i + batch_size]
+        batch_ids = ids[i:i + batch_size]
+
+        collection.add(documents=batch_docs, metadatas=batch_meta, ids=batch_ids)
+        logger.info(f"✅ Indexed batch {i // batch_size + 1} — {len(batch_docs)} documents")
 
     index_end = time.time()
     logger.info(f"✅ Vector store built in {index_end - index_start:.2f}s")
+    logger.info(f"📚 Total documents indexed: {total}")
 
-    total = time.time() - start_time
-    logger.info(f"🎉 Pipeline finished in {total:.2f}s total")
+    total_time = time.time() - start_time
+    logger.info(f"🎉 Pipeline finished in {total_time:.2f}s total")
 
 if __name__ == "__main__":
     import sys
