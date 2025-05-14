@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 # Author      : Anne-Laure MEALIER
-# File        : ragPipelineOllama.py
+# File        : searchEngineStreamlit.py
 # Description : Web scraping, chunking, LLM-based enrichment, and vector indexing pipeline
 # Created     : 2024-05-14
 # -----------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
 # Author      : Anne-Laure MEALIER
-# File        : ragPipelineOllama.py
+# File        : generateRAG.py
 # Description : Crawl and enrich web documentation using LLM, store in ChromaDB
 # Created     : 2024-05-14
 # License     : MIT
