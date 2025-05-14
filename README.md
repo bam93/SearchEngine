@@ -82,7 +82,7 @@ This script runs a Streamlit app that allows users to:
 Install dependencies:
 
 ```bash
-pip install streamlit sentence-transformers chromadb scikit-learn beautifulsoup4 requests bs4 sentence_transformers
+pip install streamlit sentence-transformers chromadb scikit-learn beautifulsoup4 requests bs4 sentence_transformers tiktoken
 ```
 
 Dependencies include:
@@ -167,4 +167,11 @@ You’ll see:
 
 ## 📝 License
 
-MIT License. Use freely for research, prototyping, or internal tooling.
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
+
+You are free to use, modify, and distribute this software, provided that:
+- The source code remains open and publicly accessible under the same license.
+- Any derivative works or modified versions are also released under GPL-3.0.
+- Appropriate credit is given to the original author.
+
+For full terms, see the [GNU GPL v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html).

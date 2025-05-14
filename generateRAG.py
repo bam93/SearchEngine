@@ -3,9 +3,22 @@
 # File        : generateRAG.py
 # Description : Crawl and enrich web documentation using LLM, store in ChromaDB
 # Created     : 2024-05-14
-# License     : MIT
+# License     : GPL-3.0
+# Version     : 1.0
+#
+# This script performs a complete RAG (Retrieval-Augmented Generation) pipeline:
+# - Crawls HTML pages from a specified base URL
+# - Extracts readable content and chunks it into paragraphs
+# - Sends each page to a local LLM via Ollama to generate:
+#     • a summary (3–5 sentences)
+#     • a list of keywords
+# - Saves the enriched data to a .jsonl file
+# - Converts the enriched content into vector embeddings
+# - Stores documents and their metadata in a ChromaDB persistent vector store
+#
+# It is designed for semantic search, question answering, or retrieval systems
+# over technical or institutional documentation.
 # -----------------------------------------------------------------------------
-
 
 import os
 import requests
@@ -171,7 +184,7 @@ Expected JSON format:
     collection = client.get_or_create_collection(
         name=chroma_collection_name,
         embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="google/bigbird-roberta-large"
+            model_name="sentence-transformers/all-mpnet-base-v2"
         )
     )
 
@@ -183,7 +196,7 @@ Expected JSON format:
             metadatas.append({
                 "title": entry['title'],
                 "url": entry['url'],
-                "keywords": entry['keywords'],
+                "keywords": ", ".join(entry["keywords"]) if isinstance(entry["keywords"], list) else entry["keywords"],
                 "summary": entry['summary'],
                 "web_path": entry['web_path']
             })
@@ -198,4 +211,6 @@ Expected JSON format:
     logger.info(f"🎉 Pipeline finished in {total:.2f}s total")
 
 if __name__ == "__main__":
-    run_pipeline(base_url="https://doc.cc.in2p3.fr/")
+    import sys
+    url = sys.argv[1] if len(sys.argv) > 1 else "https://doc.cc.in2p3.fr/"
+    run_pipeline(base_url=url)

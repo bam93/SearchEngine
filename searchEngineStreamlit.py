@@ -1,8 +1,25 @@
 # -----------------------------------------------------------------------------
 # Author      : Anne-Laure MEALIER
 # File        : searchEngineStreamlit.py
-# Description : Web scraping, chunking, LLM-based enrichment, and vector indexing pipeline
+# Description : Streamlit interface for conversational search using ChromaDB and LLMs
 # Created     : 2024-05-14
+# License     : GPL-3.0
+# Version     : 1.0
+#
+# This script launches a web-based interface for querying a vector store of
+# enriched documentation (produced by generateRAG.py). It supports:
+#
+# - Natural language queries by the user
+# - Semantic search over stored document summaries and keywords
+# - Cosine similarity ranking using sentence-transformer embeddings
+# - Three-level confidence strategy:
+#     • High: contextual LLM answer from top-matching summaries
+#     • Medium: prompt user to invoke LLM manually
+#     • Low: fallback LLM answer without context
+# - Integration with local Ollama LLM for fast response generation
+#
+# The interface is designed for researchers, engineers, or institutional users
+# to explore and question technical documentation conversationally.
 # -----------------------------------------------------------------------------
 
 
