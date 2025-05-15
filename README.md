@@ -28,15 +28,17 @@ It enables:
 ```bash
 project-root/
 ├── assets/
-│   └── logo_centrale.svg         # Centrale Méditerranée logo for the web app
-├── logs/                         # Log files from pipeline and indexing
-├── chroma_db/                    # Persistent ChromaDB store
-├── enriched_pages.jsonl          # Output of RAG content enrichment
-├── generate_RAG.py                # Crawl + enrich + embed + store
+│   └── logo_centrale.svg        # Centrale Méditerranée logo for the web app
+├── logs/                        # Log files from pipeline and indexing
+├── chroma_db/                   # Persistent ChromaDB store
+├── enriched_pages.jsonl         # Output of RAG content enrichment
+├── generate_RAG.py              # Crawl + enrich + embed + store
 ├── vector_indexing.py           # Index JSONL to ChromaDB with weighted embeddings
 ├── embed_worker.py              # Fast GPU-ready embedding subprocess
-├── search_engine_WebApp.py        # Dash app interface for querying
-└── README.md                     # You are here 🚀
+├── search_engine_WebApp.py      # Dash app interface for querying
+├── terminal_rag_query.py        # Terminal app for querying
+├── requirements.txt             # Python packages required
+└── README.md                    # You are here 🚀
 ```
 
 
@@ -145,10 +147,10 @@ python searchEngineWebApp.py
 
 ## 🖼️ Web Interface
 
-* 🧠 Query interface with text area
-* 🔁 Modes: RAG-only, Hybrid, LLM-only
-* 📚 Show source URLs and scores (sorted by relevance)
-* 📄 PDF export of full Q\&A session
+* Query interface with text area
+* Modes: RAG-only, Hybrid, LLM-only
+* Show source URLs and scores (sorted by relevance)
+* PDF export of full Q\&A session
 
 
 ## ⚙️ Configuration
