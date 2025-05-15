@@ -116,16 +116,21 @@ def generate_pdf(content):
     return base64.b64encode(pdf_data).decode("utf-8")
 
 # --- Dash App Setup ---
-app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+app = Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])
 app.title = "RAG Assistant"
 
 app.layout = dbc.Container([
-    html.H2("Interactive RAG Assistant"),
+    dbc.Row([
+        dbc.Col(html.H2("🤖 RAG Assistant", className="text-primary"), width=8),
+        dbc.Col(html.Img(src="https://www.svgrepo.com/show/331368/ai.svg", height="60px"), width=4, style={"textAlign": "right"})
+    ], align="center"),
+
     html.Hr(),
 
     dbc.Row([
-        dbc.Col(dbc.Textarea(id="question-input", placeholder="Ask your question...", style={"height": "100px"}), width=8),
+        dbc.Col(dbc.Textarea(id="question-input", placeholder="Ask your question...", style={"height": "120px"}, className="mb-2"), width=8),
         dbc.Col([
+            html.Label("Model", className="text-info fw-bold"),
             dbc.Select(
                 id="llm-selector",
                 options=[
@@ -133,8 +138,9 @@ app.layout = dbc.Container([
                     {"label": "Mistral 7B", "value": "mistral:7b"}
                 ],
                 value=DEFAULT_LLM_MODEL,
-                className="mb-2"
+                className="mb-3"
             ),
+            html.Label("Language", className="text-info fw-bold"),
             dbc.Select(
                 id="lang-selector",
                 options=[
@@ -147,19 +153,21 @@ app.layout = dbc.Container([
     ]),
 
     dbc.Row([
-        dbc.Col(dbc.Button("Submit", id="submit-button", color="primary"), width="auto"),
-        dbc.Col(dbc.Button("🧹 Clear Output", id="clear-button", color="secondary", className="ms-2"), width="auto"),
+        dbc.Col(dbc.Button("Submit", id="submit-button", color="success"), width="auto"),
+        dbc.Col(dbc.Button("🧹 Clear Output", id="clear-button", color="warning", className="ms-2"), width="auto"),
         dbc.Col(dbc.Checkbox(id="show-sources-toggle", value=False, className="ms-3"), width="auto"),
         dbc.Col(html.Label("Show sources", className="mt-2"), width="auto")
     ], className="my-3", align="center"),
 
-    html.Div(id="chat-history", children=[], style={"marginTop": "20px"}),
-    html.Div(id="pdf-download")
-])
+    dbc.Card([html.Div(id="chat-history", children=[], style={"margin": "10px"})], color="dark", inverse=True),
+    html.Div(id="pdf-download", className="mt-3 text-end"),
+    dcc.Store(id="clear-question", data="")
+], fluid=True, className="p-4")
 
 @app.callback(
     Output("chat-history", "children"),
     Output("pdf-download", "children"),
+    Output("question-input", "value"),
     Input("submit-button", "n_clicks"),
     Input("clear-button", "n_clicks"),
     State("question-input", "value"),
@@ -172,10 +180,10 @@ app.layout = dbc.Container([
 def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, lang, history):
     triggered_id = ctx.triggered_id
     if triggered_id == "clear-button":
-        return [], ""
+        return [], "", ""
 
     if not question:
-        return history + [html.Div("❗ Please enter a question.")], ""
+        return history + [html.Div("❗ Please enter a question.")], "", question
 
     answer, source_data = process_query(question, llm_model, lang)
     formatted_answer = dcc.Markdown(answer)
@@ -187,17 +195,17 @@ def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, 
 
     pdf_content = f"You: {question}\n\nAnswer:\n{answer}\n\nSources:\n" + "\n".join([f"- {item['url']} (score: {item['score']})" for item in source_data])
     pdf_base64 = generate_pdf(pdf_content)
-    download_link = html.A("📄 Download PDF", href=f"data:application/pdf;base64,{pdf_base64}", download="rag_answer.pdf", target="_blank")
+    download_link = html.A("📄 Download PDF", href=f"data:application/pdf;base64,{pdf_base64}", download="rag_answer.pdf", target="_blank", className="btn btn-outline-info")
 
     new_exchange = html.Div([
-        html.H5("🧑 You:"),
+        html.H5("🧑 You:", className="text-warning"),
         html.Div(question, style={"whiteSpace": "pre-wrap", "marginBottom": "10px"}),
-        html.H5("🤖 Assistant:"),
+        html.H5("🤖 Assistant:", className="text-success"),
         formatted_answer,
-        html.Div([html.Strong("Sources used:"), source_block], style={"marginTop": "10px", "color": "#666", "fontSize": "0.85em"})
+        html.Div([html.Strong("Sources used:"), source_block], style={"marginTop": "10px", "color": "#aaa", "fontSize": "0.85em"})
     ], style={"marginBottom": "30px"})
 
-    return history + [new_exchange], download_link
+    return history + [new_exchange], download_link, ""
 
 if __name__ == "__main__":
     app.run(debug=True)
