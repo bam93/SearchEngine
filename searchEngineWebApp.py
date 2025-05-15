@@ -8,12 +8,15 @@ import markdown
 from xhtml2pdf import pisa
 import base64
 import tempfile
+import sys
+import requests
 
 # --- Configuration ---
 TOP_K = 50
 THRESHOLD_GOOD = 0.70
 DEFAULT_LLM_MODEL = "gemma3:4b"
 DEFAULT_LANGUAGE = "EN"
+DEFAULT_QUERY_MODE = "hybrid"
 
 # --- Load Chroma Collection ---
 client = PersistentClient(path="./chroma_db")
@@ -35,21 +38,40 @@ def embed_texts(texts):
         return np.zeros((len(texts), 384))
 
 # --- LLM Call ---
-def call_ollama_llm(prompt, model):
+import json
+
+def call_ollama_llm(prompt, model, temperature=0.1):
     try:
-        result = subprocess.run(
-            ["ollama", "run", model],
-            input=prompt.encode("utf-8"),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True
-        )
-        return result.stdout.decode("utf-8").strip()
-    except subprocess.CalledProcessError as e:
-        return f"LLM error: {e.stderr.decode('utf-8')}"
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "options": {"temperature": temperature}
+        }
+        response = requests.post("http://localhost:11434/api/generate", json=payload, stream=True)
+        if response.status_code == 200:
+            answer_parts = []
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        json_line = json.loads(line.decode("utf-8"))
+                        if "response" in json_line:
+                            answer_parts.append(json_line["response"])
+                    except json.JSONDecodeError as e:
+                        print("⚠️ JSON decode error in line:", line)
+            return ''.join(answer_parts)
+        else:
+            return f"LLM API error: {response.status_code} - {response.text}"
+    except Exception as e:
+        return f"LLM API exception: {str(e)}"
+
 
 # --- RAG Logic ---
-def process_query(user_question, llm_model, lang):
+def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
+    temperature = 0.1 if mode == "rag_only" else 0.4 if mode == "hybrid" else 0.7
+
+    if mode == "llm_only":
+        return call_ollama_llm(user_question, llm_model, temperature=temperature), []
+
     query_emb = embed_texts([user_question])[0]
 
     results = collection.query(
@@ -63,8 +85,9 @@ def process_query(user_question, llm_model, lang):
     scores = results.get("distances", [[]])[0]
 
     if not docs or scores[0] < THRESHOLD_GOOD:
-        fallback_prompt = f"{user_question}" if lang == "EN" else f"{user_question}"
-        return call_ollama_llm(fallback_prompt, llm_model), []
+        if mode == "rag_only":
+            return "⚠️ No relevant documents found in RAG-only mode.", []
+        return call_ollama_llm(user_question, llm_model, temperature=temperature), []
 
     page_map = {}
     for doc, meta, score in zip(docs, metas, scores):
@@ -85,7 +108,22 @@ def process_query(user_question, llm_model, lang):
     all_text = "\n\n".join(p["text"] for p in page_contexts)
     all_urls = [p["url"] for p in page_contexts]
 
-    prompt = f"""
+    if mode == "rag_only":
+        prompt = f"""
+You are an expert assistant helping users understand technical documentation.
+
+Sources:
+{chr(10).join('- ' + url for url in all_urls)}
+
+Documentation:
+{all_text}
+
+Question: {user_question}
+
+Provide a detailed, structured, and practical answer using only the provided documentation. Do not use any external or internal knowledge.
+"""
+    else:
+        prompt = f"""
 You are an expert assistant helping users understand technical documentation.
 
 Sources:
@@ -99,7 +137,8 @@ Question: {user_question}
 Provide a detailed, structured, and practical answer. Include examples (e.g., Python, Bash) when applicable.
 If relevant, enhance the response with complementary LLM knowledge and clearly indicate what part comes from the LLM.
 """
-    return call_ollama_llm(prompt, llm_model), page_contexts
+
+    return call_ollama_llm(prompt, llm_model, temperature=temperature), page_contexts
 
 # --- Generate PDF ---
 def generate_pdf(content):
@@ -147,7 +186,28 @@ app.layout = dbc.Container([
                     {"label": "English", "value": "EN"},
                     {"label": "Français", "value": "FR"}
                 ],
-                value=DEFAULT_LANGUAGE
+                value=DEFAULT_LANGUAGE,
+                className="mb-3"
+            ),
+            html.Label([
+                "Mode ",
+                html.Span(
+                    "ⓘ",
+                    id="mode-tooltip",
+                    style={"textDecoration": "underline dotted", "cursor": "pointer"},
+                    title="Choose how the assistant should answer:\n- Hybrid: RAG with LLM enhancement\n- RAG Only: answer only from documents\n- LLM Only: use only the LLM's internal knowledge"
+                )
+            ], className="text-info fw-bold"),
+
+            dbc.Select(
+                id="mode-selector",
+                options=[
+                    {"label": "Hybrid (RAG + LLM)", "value": "hybrid"},
+                    {"label": "RAG Only", "value": "rag_only"},
+                    {"label": "LLM Only", "value": "llm_only"}
+                ],
+                value=DEFAULT_QUERY_MODE,
+                className="mb-3"
             )
         ], width=4)
     ]),
@@ -164,6 +224,7 @@ app.layout = dbc.Container([
     dcc.Store(id="clear-question", data="")
 ], fluid=True, className="p-4")
 
+
 @app.callback(
     Output("chat-history", "children"),
     Output("pdf-download", "children"),
@@ -174,10 +235,11 @@ app.layout = dbc.Container([
     State("show-sources-toggle", "value"),
     State("llm-selector", "value"),
     State("lang-selector", "value"),
+    State("mode-selector", "value"),
     State("chat-history", "children"),
     prevent_initial_call=True
 )
-def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, lang, history):
+def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, lang, mode, history):
     triggered_id = ctx.triggered_id
     if triggered_id == "clear-button":
         return [], "", ""
@@ -185,7 +247,7 @@ def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, 
     if not question:
         return history + [html.Div("❗ Please enter a question.")], "", question
 
-    answer, source_data = process_query(question, llm_model, lang)
+    answer, source_data = process_query(question, llm_model, lang, mode)
     formatted_answer = dcc.Markdown(answer)
 
     if show_sources and source_data:
