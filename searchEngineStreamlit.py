@@ -1,177 +1,175 @@
 # -----------------------------------------------------------------------------
 # Author      : Anne-Laure MEALIER
-# File        : searchEngineStreamlit.py
-# Description : Streamlit interface for conversational search using ChromaDB and LLMs
+# File        : searchEngineDash.py
+# Description : Dash interface for conversational search using ChromaDB and LLMs
 # Created     : 2024-05-14
 # License     : GPL-3.0
-# Version     : 1.0
-#
-# This script launches a web-based interface for querying a vector store of
-# enriched documentation (produced by generateRAG.py). It supports:
-#
-# - Natural language queries by the user
-# - Semantic search over stored document summaries and keywords
-# - Cosine similarity ranking using sentence-transformer embeddings
-# - Three-level confidence strategy:
-#     • High: contextual LLM answer from top-matching summaries
-#     • Medium: prompt user to invoke LLM manually
-#     • Low: fallback LLM answer without context
-# - Integration with local Ollama LLM for fast response generation
-#
-# The interface is designed for researchers, engineers, or institutional users
-# to explore and question technical documentation conversationally.
+# Version     : 1.1 (filtered + correct cosine weighting)
 # -----------------------------------------------------------------------------
 
-
-import streamlit as st
-import chromadb
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
+import dash
+from dash import dcc, html, Input, Output, State
+import dash_bootstrap_components as dbc
+import json
 import subprocess
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from chromadb import PersistentClient
 
 # ----------------------------
 # Configuration
 # ----------------------------
 EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
-LLM_MODEL = "mistral:7b"
+LLM_MODEL = "deepseek-r1:14b"
 TOP_K = 5
 THRESHOLD_GOOD = 0.70
 THRESHOLD_LOW = 0.40
-TEMPERATURE = 0.1
-SUMMARY_WEIGHT = 0.7
-KEYWORDS_WEIGHT = 0.3
+SUMMARY_WEIGHT = 0.8
+KEYWORDS_WEIGHT = 0.2
 
 # ----------------------------
 # Load Chroma Vector Store
 # ----------------------------
-chroma_client = chromadb.PersistentClient(path="./chroma_db")
+chroma_client = PersistentClient(path="./chroma_db")
 collection = chroma_client.get_collection(name="web_chunks")
 
 # ----------------------------
-# Load Embedding Model
+# Embedding utility (external script via subprocess)
 # ----------------------------
-embedder = SentenceTransformer(EMBEDDING_MODEL)
+def embed_texts(texts):
+    try:
+        result = subprocess.run(
+            ["python", "embed_worker.py"],
+            input=json.dumps(texts).encode("utf-8"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+        return np.array(json.loads(result.stdout.decode("utf-8")))
+    except Exception as e:
+        return np.zeros((len(texts), 384))
 
 # ----------------------------
-# Functions
+# LLM utility
 # ----------------------------
+def call_ollama_llm(prompt):
+    try:
+        result = subprocess.run(
+            ["ollama", "run", LLM_MODEL],
+            input=prompt.encode("utf-8"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+        return result.stdout.decode("utf-8").strip()
+    except subprocess.CalledProcessError as e:
+        return f"LLM error: {e.stderr.decode('utf-8')}"
 
-def get_top_k_matches(question, k=TOP_K):
-    """Return top-k most similar documents based on weighted embedding (summary + keywords)"""
-    query_embedding = embedder.encode([question])[0]
+# ----------------------------
+# Core similarity logic with page deduplication
+# ----------------------------
+def get_top_k_matches(question):
+    query_embedding = embed_texts([question])[0]
     all_docs = collection.get()
 
     summaries = [meta.get("summary", "") for meta in all_docs["metadatas"]]
     keywords_list = [", ".join(meta.get("keywords", [])) for meta in all_docs["metadatas"]]
-    ids = all_docs["ids"]
-    metadatas = all_docs["metadatas"]
-    texts = all_docs["documents"]
+    web_paths = [meta.get("web_path", "") for meta in all_docs["metadatas"]]
 
-    summary_embeddings = embedder.encode(summaries)
-    keywords_embeddings = embedder.encode(keywords_list)
+    summary_embeddings = embed_texts(summaries)
+    keyword_embeddings = embed_texts(keywords_list)
 
     results = []
     for i in range(len(summaries)):
-        # Weighted sum of summary and keyword embeddings
-        combined_embedding = SUMMARY_WEIGHT * summary_embeddings[i] + KEYWORDS_WEIGHT * keywords_embeddings[i]
+        combined_embedding = (SUMMARY_WEIGHT * summary_embeddings[i] + KEYWORDS_WEIGHT * keyword_embeddings[i]) / 1.0
         similarity = cosine_similarity([query_embedding], [combined_embedding])[0][0]
-
         results.append({
-            "id": ids[i],
+            "id": all_docs["ids"][i],
             "similarity": float(similarity),
             "summary": summaries[i],
-            "text": texts[i],
-            "metadata": metadatas[i]
+            "text": all_docs["documents"][i],
+            "metadata": all_docs["metadatas"][i],
+            "web_path": web_paths[i]
         })
 
-    # Sort by similarity score (descending)
     sorted_results = sorted(results, key=lambda x: x["similarity"], reverse=True)
-    return sorted_results[:k]
 
-def generate_answer_with_llm(context, question):
-    """Query the LLM with provided context"""
-    prompt = f"""Context:
-{context}
+    # Filter to only the best chunk per unique page
+    seen_paths = set()
+    unique_results = []
+    for doc in sorted_results:
+        if doc["web_path"] not in seen_paths:
+            seen_paths.add(doc["web_path"])
+            unique_results.append(doc)
+        if len(unique_results) >= TOP_K:
+            break
 
-Question: {question}
-
-Give a concise and accurate answer, listing helpful links and keywords when relevant.
-"""
-    result = subprocess.run(
-        ["ollama", "run", LLM_MODEL],
-        input=prompt.encode("utf-8"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    if result.returncode != 0:
-        return f"LLM error: {result.stderr.decode('utf-8')}"
-    return result.stdout.decode("utf-8").strip()
-
-def generate_answer_without_context(question):
-    """Query the LLM without any context (fallback for low similarity)"""
-    prompt = f"""Answer the following question as best as you can, even without any context:
-
-Question: {question}
-"""
-    result = subprocess.run(
-        ["ollama", "run", LLM_MODEL],
-        input=prompt.encode("utf-8"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    if result.returncode != 0:
-        return f"LLM error: {result.stderr.decode('utf-8')}"
-    return result.stdout.decode("utf-8").strip()
+    return unique_results
 
 # ----------------------------
-# Streamlit User Interface
+# Dash Layout
 # ----------------------------
-st.set_page_config(page_title="🔍 RAG Document Search", layout="wide")
-st.title("🔍 Conversational Search Over Documentation")
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])
 
-# User input
-query = st.text_input("Ask a question:", placeholder="How do I configure a Python environment?")
+app.layout = dbc.Container([
+    html.H1("🔍 Conversational Search Over Documentation"),
+    dcc.Input(id="query-input", type="text", placeholder="Ask a question...", style={"width": "100%"}),
+    html.Br(), html.Br(),
+    dbc.Button("Run Search", id="search-btn", color="primary"),
+    html.Hr(),
+    html.Div(id="results-output")
+])
 
-if st.button("🔎 Run Search"):
-    if not query.strip():
-        st.warning("Please enter a valid question.")
+@app.callback(
+    Output("results-output", "children"),
+    Input("search-btn", "n_clicks"),
+    State("query-input", "value")
+)
+def update_output(n_clicks, query):
+    if not n_clicks or not query or not query.strip():
+        return dbc.Alert("Please enter a valid question.", color="warning")
+
+    matches = get_top_k_matches(query)
+    if not matches:
+        return dbc.Alert("No documents found.", color="danger")
+
+    best_score = matches[0]['similarity']
+    content = []
+
+    for doc in matches:
+        similarity_pct = round(doc["similarity"] * 100, 2)
+        content.extend([
+            html.H5(html.A("🔗 View Page", href=doc["metadata"]["url"], target="_blank")),
+            html.P(f"Summary: {doc['summary']}", style={"margin-bottom": "4px"}),
+            html.P(f"Keywords: {doc['metadata'].get('keywords', '')}"),
+            html.P(f"Similarity Score: {similarity_pct} %"),
+            html.Hr()
+        ])
+
+    if best_score >= THRESHOLD_GOOD:
+        context = "\n\n".join([d["summary"] for d in matches])
+        llm_output = call_ollama_llm(f"Context:\n{context}\n\nQuestion: {query}\n\nAnswer:")
+        content.append(html.Div([
+            html.H4("🧠 LLM Response (with context):"),
+            html.Pre(llm_output)
+        ]))
+
+    elif best_score >= THRESHOLD_LOW:
+        context = "\n\n".join([d["summary"] for d in matches])
+        llm_output = call_ollama_llm(f"Context:\n{context}\n\nQuestion: {query}\n\nAnswer:")
+        content.append(html.Div([
+            html.H4("🧠 LLM Response (medium confidence):"),
+            html.Pre(llm_output)
+        ]))
+
     else:
-        st.info("Searching the vector database for relevant content...")
-        top_docs = get_top_k_matches(query)
+        llm_output = call_ollama_llm(f"Answer the following question as best you can:\n\nQuestion: {query}")
+        content.append(html.Div([
+            html.H4("🧠 LLM Response (no context):"),
+            html.Pre(llm_output)
+        ]))
 
-        best_similarity = top_docs[0]["similarity"]
+    return content
 
-        # Display top document matches
-        st.subheader("🔎 Top Matching Documents")
-        for doc in top_docs:
-            similarity_pct = round(doc["similarity"] * 100, 2)
-            st.markdown(f"**🔗 [View Page]({doc['metadata']['url']})**")
-            st.markdown(f"**Summary:** {doc['summary']}")
-            st.markdown(f"**Keywords:** {', '.join(doc['metadata'].get('keywords', []))}")
-            st.markdown(f"**Similarity Score:** {similarity_pct} %")
-            st.markdown("---")
-
-        # High similarity: use context + LLM
-        if best_similarity >= THRESHOLD_GOOD:
-            st.success("🎯 High confidence match. Generating a contextual LLM answer...")
-            full_context = "\n\n".join([d["summary"] for d in top_docs])
-            llm_response = generate_answer_with_llm(full_context, query)
-            st.subheader("🧠 LLM Response (with context):")
-            st.write(llm_response)
-
-        # Medium similarity: suggest using LLM
-        elif best_similarity >= THRESHOLD_LOW:
-            st.warning("⚠️ Medium confidence. You can still ask the LLM to generate a response.")
-            if st.button("🛠️ Generate Answer Anyway"):
-                full_context = "\n\n".join([d["summary"] for d in top_docs])
-                llm_response = generate_answer_with_llm(full_context, query)
-                st.subheader("🧠 LLM Response (medium confidence):")
-                st.write(llm_response)
-
-        # Low similarity: fallback to LLM only
-        else:
-            st.error("🔴 Low similarity (< 40%). No good matches found. Generating an answer without context.")
-            llm_response = generate_answer_without_context(query)
-            st.subheader("🧠 LLM Response (no context):")
-            st.write(llm_response)
+if __name__ == '__main__':
+    app.run(debug=True)
