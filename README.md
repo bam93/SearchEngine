@@ -1,4 +1,4 @@
-## 📘 RAG Search Assistant – Centrale MEALIER Edition
+## 📘 RAG Search Assistant – Centrale MEDITERRANEE Edition
 
 **Author**: Anne-Laure MEALIER
 **License**: GPL-3.0
