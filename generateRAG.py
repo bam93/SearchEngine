@@ -29,9 +29,6 @@ import requests
 from datetime import datetime
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-from chromadb import PersistentClient
-from chromadb.utils import embedding_functions
-from sentence_transformers import SentenceTransformer
 
 # === Logger Setup ===
 os.makedirs("logs", exist_ok=True)
@@ -49,10 +46,6 @@ logger = logging.getLogger(__name__)
 # === Device Setup ===
 device = "cuda" if torch.cuda.is_available() else "cpu"
 logger.info(f"🖥️ Using device: {device}")
-
-# === Embedding Model ===
-embedding_model = "sentence-transformers/all-mpnet-base-v2"
-embedder = SentenceTransformer(embedding_model, device=device)
 
 def run_pipeline(
     base_url: str,
@@ -173,38 +166,8 @@ Expected JSON format:
 
     logger.info(f"🌐 Finished crawling {page_counter} pages | {chunk_counter} chunks")
 
-    logger.info("🧠 Starting vector indexing...")
-    client = PersistentClient(path='./chroma_db')
-    collection = client.get_or_create_collection(
-        name=chroma_collection_name,
-        embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=embedding_model
-        )
-    )
-
-    documents, metadatas, ids = [], [], []
-    with open(jsonl_output_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            entry = json.loads(line)
-            documents.append(entry['text'])
-            metadatas.append({
-                "title": entry['title'],
-                "url": entry['url'],
-                "keywords": ", ".join(entry["keywords"]) if isinstance(entry["keywords"], list) else entry["keywords"],
-                "summary": entry['summary'],
-                "web_path": entry['web_path']
-            })
-            ids.append(entry['id'])
-
-    for i in range(0, len(documents), batch_size):
-        batch_docs = documents[i:i + batch_size]
-        batch_meta = metadatas[i:i + batch_size]
-        batch_ids = ids[i:i + batch_size]
-        collection.add(documents=batch_docs, metadatas=batch_meta, ids=batch_ids)
-        logger.info(f"✅ Indexed batch {i // batch_size + 1} — {len(batch_docs)} documents")
-
-    logger.info(f"✅ Total documents indexed: {len(documents)}")
-    logger.info("🎉 Pipeline completed.")
+    logger.info(f"📄 JSONL file saved: {jsonl_output_path}")
+    logger.info("✅ Data enrichment complete. No vector indexing performed.")
 
 
 if __name__ == "__main__":
