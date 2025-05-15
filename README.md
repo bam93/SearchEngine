@@ -182,8 +182,11 @@ python generateRAG.py https://doc.cc.in2p3.fr/
 # Index generated file
 python vector_indexing.py enriched_pages.jsonl
 
-# Launch app
-python searchEngineWebApp.py
+# Launch web app
+python search_engine_webApp.py
+
+# Launch terminal app
+python terminal_rag_query.py "How run an interactive job at CC ?"
 ```
 
 ## 📄 License
