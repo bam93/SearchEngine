@@ -1,45 +1,22 @@
-# -----------------------------------------------------------------------------
-# Author      : Anne-Laure MEALIER
-# File        : searchEngineDash.py
-# Description : Dash interface for conversational search with filters
-# Created     : 2024-05-14
-# License     : GPL-3.0
-# Version     : 1.3 (Filtering by path, keyword, free text)
-# -----------------------------------------------------------------------------
-
-import dash
-from dash import dcc, html, Input, Output, State
-import dash_bootstrap_components as dbc
 import json
 import subprocess
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
+from dash import Dash, html, dcc, Input, Output, State, ctx
+import dash_bootstrap_components as dbc
 from chromadb import PersistentClient
+import markdown
 
-# ----------------------------
-# Configuration
-# ----------------------------
-SUMMARY_WEIGHT = 0.8
-KEYWORDS_WEIGHT = 0.2
-LLM_MODEL = "deepseek-r1:14b"
-TOP_K = 10
+# --- Configuration ---
+TOP_K = 50
 THRESHOLD_GOOD = 0.70
-SUMMARY_DISPLAY = 3
+DEFAULT_LLM_MODEL = "gemma3:4b"
+DEFAULT_LANGUAGE = "EN"
 
-# ----------------------------
-# Load Chroma Vector Store
-# ----------------------------
-chroma_client = PersistentClient(path="./chroma_db")
-collection = chroma_client.get_collection(name="web_chunks")
-all_docs = collection.get()
+# --- Load Chroma Collection ---
+client = PersistentClient(path="./chroma_db")
+collection = client.get_collection(name="web_chunks")
 
-# Extract filter options
-all_paths = sorted(set(m.get("web_path", "") for m in all_docs["metadatas"]))
-all_keywords = sorted({k for m in all_docs["metadatas"] for k in m.get("keywords", [])})
-
-# ----------------------------
-# Embedding utility
-# ----------------------------
+# --- Embedding Utility ---
 def embed_texts(texts):
     try:
         result = subprocess.run(
@@ -50,16 +27,15 @@ def embed_texts(texts):
             check=True
         )
         return np.array(json.loads(result.stdout.decode("utf-8")))
-    except Exception:
+    except Exception as e:
+        print("❌ Embedding failed:", e)
         return np.zeros((len(texts), 384))
 
-# ----------------------------
-# LLM utility
-# ----------------------------
-def call_ollama_llm(prompt):
+# --- LLM Call ---
+def call_ollama_llm(prompt, model):
     try:
         result = subprocess.run(
-            ["ollama", "run", LLM_MODEL],
+            ["ollama", "run", model],
             input=prompt.encode("utf-8"),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -69,172 +45,130 @@ def call_ollama_llm(prompt):
     except subprocess.CalledProcessError as e:
         return f"LLM error: {e.stderr.decode('utf-8')}"
 
-# ----------------------------
-# Dash Layout
-# ----------------------------
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])
+# --- RAG Logic ---
+def process_query(user_question, llm_model, lang):
+    query_emb = embed_texts([user_question])[0]
 
-app.clientside_callback(
-    """
-    function(n_clicks) {
-        if (!n_clicks) return;
-        const text = document.getElementById("llm-answer")?.innerText || "";
-        navigator.clipboard.writeText(text);
-        alert("Copied to clipboard!");
-    }
-    """,
-    Output("copy-btn", "n_clicks"),
-    Input("copy-btn", "n_clicks")
-)
+    results = collection.query(
+        query_embeddings=[query_emb],
+        n_results=TOP_K,
+        include=["documents", "metadatas", "distances"]
+    )
 
-app.clientside_callback(
-    """
-    function(n_clicks) {
-        if (!n_clicks) return;
-        const element = document.getElementById("llm-answer");
-        if (!element) return;
-        const content = element.innerText;
-        const win = window.open("", "_blank");
-        win.document.write(`<pre>${content}</pre>`);
-        win.document.close();
-        win.print();
-    }
-    """,
-    Output("export-pdf-btn", "n_clicks"),
-    Input("export-pdf-btn", "n_clicks")
-)
+    docs = results.get("documents", [[]])[0]
+    metas = results.get("metadatas", [[]])[0]
+    scores = results.get("distances", [[]])[0]
 
-app.layout = dbc.Container([
-    html.H1("🔍 Conversational Search Over Documentation"),
-    dbc.Row([
-        dbc.Col(dcc.Input(id="query-input", type="text", placeholder="Ask a question...", style={"width": "100%"}), md=8),
-        dbc.Col(dbc.Button("Run Search", id="search-btn", color="primary", className="mt-1"), md=4),
-    ]),
-    html.Br(),
-    dbc.Row([
-        dbc.Col([
-            html.Label("Section (web path):"),
-            dcc.Dropdown(id="path-filter", options=[{"label": p, "value": p} for p in all_paths], multi=False)
-        ], md=6),
-        dbc.Col([
-            html.Label("Keyword tag:"),
-            dcc.Dropdown(id="keyword-filter", options=[{"label": k, "value": k} for k in all_keywords], multi=False)
-        ], md=6),
-    ]),
-    html.Br(),
-    html.Label("Free text filter (within document text):"),
-    dcc.Input(id="free-text", type="text", placeholder="Contains...", style={"width": "100%"}),
-    html.Hr(),
-    html.Div(id="results-output")
-])
+    if not docs or scores[0] < THRESHOLD_GOOD:
+        fallback_prompt = f"{user_question}" if lang == "EN" else f"{user_question}"
+        return call_ollama_llm(fallback_prompt, llm_model), []
 
-# ----------------------------
-# Main callback
-# ----------------------------
-@app.callback(
-    Output("results-output", "children"),
-    Input("search-btn", "n_clicks"),
-    State("query-input", "value"),
-    State("path-filter", "value"),
-    State("keyword-filter", "value"),
-    State("free-text", "value")
-)
-def update_output(n_clicks, query, path_val, keyword_val, free_val):
-    if not n_clicks or not query or not query.strip():
-        return dbc.Alert("Please enter a valid question.", color="warning")
+    page_map = {}
+    for doc, meta, score in zip(docs, metas, scores):
+        url = meta.get("url", "")
+        if score >= THRESHOLD_GOOD and url not in page_map:
+            page_map[url] = {
+                "text": doc,
+                "score": round(score, 4)
+            }
+        elif score >= THRESHOLD_GOOD and url in page_map:
+            page_map[url]["text"] += "\n" + doc
 
-    # Filter docs based on criteria
-    filtered = []
-    for i, doc in enumerate(all_docs["documents"]):
-        meta = all_docs["metadatas"][i]
-        if path_val and meta.get("web_path") != path_val:
-            continue
-        if keyword_val and keyword_val not in meta.get("keywords", []):
-            continue
-        if free_val and free_val.lower() not in doc.lower():
-            continue
-        filtered.append({
-            "id": all_docs["ids"][i],
-            "text": doc,
-            "metadata": meta
-        })
+    page_contexts = [
+        {"url": url, "text": data["text"], "score": data["score"]}
+        for url, data in page_map.items()
+    ]
 
-    if not filtered:
-        return dbc.Alert("No documents match the selected filters.", color="danger")
+    all_text = "\n\n".join(p["text"] for p in page_contexts)
+    all_urls = [p["url"] for p in page_contexts]
 
-    query_embedding = embed_texts([query])[0]
-    summaries = [f["metadata"].get("summary", "") for f in filtered]
-    keywords = [", ".join(f["metadata"].get("keywords", [])) for f in filtered]
-    summary_embeddings = embed_texts(summaries)
-    keyword_embeddings = embed_texts(keywords)
+    prompt = f"""
+You are an expert assistant helping users understand technical documentation.
 
-    results = []
-    for i in range(len(filtered)):
-        combined_embedding = (SUMMARY_WEIGHT * summary_embeddings[i] + KEYWORDS_WEIGHT * keyword_embeddings[i])
-        sim = cosine_similarity([query_embedding], [combined_embedding])[0][0]
-        results.append({
-            "id": filtered[i]["id"],
-            "text": filtered[i]["text"],
-            "metadata": filtered[i]["metadata"],
-            "similarity": float(sim)
-        })
-
-    
-    
-
-    top_matches = sorted(results, key=lambda x: x["similarity"], reverse=True)[:TOP_K]
-
-    # Display summaries
-    content = []
-    seen_paths = set()
-    display_matches = []
-    for doc in top_matches:
-        path = doc["metadata"].get("web_path")
-        if path not in seen_paths:
-            seen_paths.add(path)
-            display_matches.append(doc)
-        if len(display_matches) >= SUMMARY_DISPLAY:
-            break
-
-    for doc in display_matches:
-        content.extend([
-            html.H5(html.A("🔗 View Page", href=doc["metadata"]["url"], target="_blank")),
-            html.P(f"Summary: {doc['metadata'].get('summary', '')}"),
-            html.P(f"Keywords: {', '.join(doc['metadata'].get('keywords', []))}"),
-            html.P(f"Similarity Score: {round(doc['similarity'] * 100, 2)} %"),
-            html.Hr()
-        ])
-
-    # Generate LLM response from all high-confidence pages
-    high_confidence = [doc for doc in top_matches if doc['similarity'] >= THRESHOLD_GOOD]
-    if high_confidence:
-        all_context = "\n\n".join(doc['text'] for doc in high_confidence).join(doc['text'] for doc in high_confidence)
-        urls = set(doc['metadata'].get('url') for doc in high_confidence)
-        url_list = "\n".join(f"- {u}" for u in urls).join(f"- {u}" for u in urls)
-        prompt = f"""
-You are an expert assistant helping users understand official documentation.
-
-The answer must be based only on the following documentation pages:
-{url_list}
+Sources:
+{chr(10).join('- ' + url for url in all_urls)}
 
 Documentation:
-{all_context}
+{all_text}
 
-Question: {query}
+Question: {user_question}
 
-Write a complete, structured, and practical answer. Include examples or code if applicable.
+Provide a detailed, structured, and practical answer. Include examples (e.g., Python, Bash) when applicable.
+If relevant, enhance the response with complementary LLM knowledge and clearly indicate what part comes from the LLM.
 """
-        content.append(html.H5("📚 Pages used for this answer:"))
-        content.append(html.Ul([html.Li(html.A(url, href=url, target="_blank")) for url in urls]))
-        answer = call_ollama_llm(prompt)
-        content.append(html.H4("🧠 LLM Answer (from all confident results):"))
-        content.append(html.Pre(answer, id="llm-answer"))
-        content.append(html.Div([
-            html.Button("📋 Copy to clipboard", id="copy-btn", n_clicks=0, style={"marginRight": "10px"}),
-            html.Button("🖨️ Export to PDF", id="export-pdf-btn", n_clicks=0)
-        ]))
+    return call_ollama_llm(prompt, llm_model), page_contexts
 
-    return content
+# --- Dash App Setup ---
+app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+app.title = "RAG Assistant"
 
-if __name__ == '__main__':
+app.layout = dbc.Container([
+    html.H2("Interactive RAG Assistant"),
+    html.Hr(),
+
+    dbc.Row([
+        dbc.Col(dbc.Textarea(id="question-input", placeholder="Ask your question...", style={"height": "100px"}), width=8),
+        dbc.Col([
+            dbc.Select(
+                id="llm-selector",
+                options=[
+                    {"label": "Gemma 3 (4b)", "value": "gemma3:4b"},
+                    {"label": "Mistral 7B", "value": "mistral:7b"}
+                ],
+                value=DEFAULT_LLM_MODEL,
+                className="mb-2"
+            ),
+            dbc.Select(
+                id="lang-selector",
+                options=[
+                    {"label": "English", "value": "EN"},
+                    {"label": "Français", "value": "FR"}
+                ],
+                value=DEFAULT_LANGUAGE
+            )
+        ], width=4)
+    ]),
+
+    dbc.Row([
+        dbc.Col(dbc.Button("Submit", id="submit-button", color="primary"), width="auto"),
+        dbc.Col(dbc.Checkbox(id="show-sources-toggle", value=False, className="ms-3"), width="auto"),
+        dbc.Col(html.Label("Show sources", className="mt-2"), width="auto")
+    ], className="my-3", align="center"),
+
+    html.Div(id="chat-history", children=[], style={"marginTop": "20px"})
+])
+
+@app.callback(
+    Output("chat-history", "children"),
+    Input("submit-button", "n_clicks"),
+    State("question-input", "value"),
+    State("show-sources-toggle", "value"),
+    State("llm-selector", "value"),
+    State("lang-selector", "value"),
+    State("chat-history", "children"),
+    prevent_initial_call=True
+)
+def update_chat(n_clicks, question, show_sources, llm_model, lang, history):
+    if not question:
+        return history + [html.Div("❗ Please enter a question.")]
+
+    answer, source_data = process_query(question, llm_model, lang)
+    formatted_answer = dcc.Markdown(answer)
+
+    if show_sources and source_data:
+        source_block = dcc.Markdown("\n".join([f"- {item['url']} (score: {item['score']})" for item in source_data]))
+    else:
+        source_block = ""
+
+    new_exchange = html.Div([
+        html.H5("🧑 You:"),
+        html.Div(question, style={"whiteSpace": "pre-wrap", "marginBottom": "10px"}),
+        html.H5("🤖 Assistant:"),
+        formatted_answer,
+        html.Div([html.Strong("Sources used:"), source_block], style={"marginTop": "10px", "color": "#666", "fontSize": "0.85em"})
+    ], style={"marginBottom": "30px"})
+
+    return history + [new_exchange]
+
+if __name__ == "__main__":
     app.run(debug=True)

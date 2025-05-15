@@ -82,7 +82,7 @@ This script runs a Streamlit app that allows users to:
 Install dependencies:
 
 ```bash
-pip install streamlit sentence-transformers chromadb scikit-learn beautifulsoup4 requests bs4 sentence_transformers tiktoken dash dash_bootstrap_components torch asyncio
+pip install streamlit sentence-transformers chromadb scikit-learn beautifulsoup4 requests bs4 sentence_transformers tiktoken dash dash_bootstrap_components torch asyncio markdown
 ```
 
 Dependencies include:
