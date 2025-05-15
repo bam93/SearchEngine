@@ -1,4 +1,4 @@
-## 📘 RAG Search Assistant – Centrale MEDITERRANEE Edition
+## 📘 RAG Search Assistant – Centrale Méditerranée Edition
 
 **Author**: Anne-Laure MEALIER
 **License**: GPL-3.0
@@ -28,14 +28,14 @@ It enables:
 ```bash
 project-root/
 ├── assets/
-│   └── logo_centrale.svg         # Centrale Médietrranée logo for the web app
+│   └── logo_centrale.svg         # Centrale Méditerranée logo for the web app
 ├── logs/                         # Log files from pipeline and indexing
 ├── chroma_db/                    # Persistent ChromaDB store
 ├── enriched_pages.jsonl          # Output of RAG content enrichment
-├── generateRAG.py                # Crawl + enrich + embed + store
+├── generate_RAG.py                # Crawl + enrich + embed + store
 ├── vector_indexing.py           # Index JSONL to ChromaDB with weighted embeddings
 ├── embed_worker.py              # Fast GPU-ready embedding subprocess
-├── searchEngineWebApp.py        # Dash app interface for querying
+├── search_engine_WebApp.py        # Dash app interface for querying
 └── README.md                     # You are here 🚀
 ```
 
@@ -71,6 +71,10 @@ asyncio
 
 </details>
 
+```bash
+# Ollama manual install instructions
+curl -fsSL https://ollama.com/install.sh | sh
+```
 
 ### 2. Run the Full RAG Pipeline
 
