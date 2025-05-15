@@ -4,7 +4,7 @@
 # Description : Indexes enriched JSONL into ChromaDB with GPU-accelerated embeddings
 # Created     : 2024-05-14
 # License     : GPL-3.0
-# Version     : 1.2 (GPU-patched)
+# Version     : 1.3 (Optimized for speed and embedding performance)
 # -----------------------------------------------------------------------------
 
 import os
@@ -28,7 +28,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === Custom GPU Embedder ===
+# === Embedding Configuration ===
+SUMMARY_WEIGHT = 0.8
+KEYWORDS_WEIGHT = 0.2
+
+# === Custom Fast GPU Embedder ===
 class GPUEmbedder(EmbeddingFunction):
     def name(self):
         return "sentence_transformer"
@@ -36,18 +40,17 @@ class GPUEmbedder(EmbeddingFunction):
         import torch
         from sentence_transformers import SentenceTransformer
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2", device=self.device)
+        self.model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", device=self.device)
         logger.info(f"✅ Embedding model loaded on: {self.device}")
 
     def __call__(self, texts):
         import numpy as np
-        embeddings = self.model.encode(texts, convert_to_numpy=True)
+        embeddings = self.model.encode(texts, convert_to_numpy=True, show_progress_bar=False, batch_size=64)
         if np.all(embeddings == 0):
             logger.warning("⚠️ All generated embeddings are zeros.")
         else:
             logger.info(f"🔍 First embedding norm: {np.linalg.norm(embeddings[0]):.4f}")
         return embeddings
-        return self.model.encode(texts, convert_to_numpy=True)
 
 def index_vector_store(
     jsonl_input_path: str,
@@ -58,23 +61,33 @@ def index_vector_store(
     logger.info("🧠 Starting vector indexing...")
     index_start = time.time()
 
+    embedder = GPUEmbedder()
     client = PersistentClient(path=persist_directory)
     collection = client.get_or_create_collection(
         name=chroma_collection_name,
-        embedding_function=GPUEmbedder()
+        embedding_function=None  # We supply embeddings manually
     )
 
-    documents, metadatas, ids = [], [], []
+    documents, metadatas, ids, embeddings = [], [], [], []
     try:
         with open(jsonl_input_path, 'r', encoding='utf-8') as f:
             for line in f:
                 entry = json.loads(line)
+                summary = entry.get("summary", "")
+                keywords = ", ".join(entry["keywords"]) if isinstance(entry["keywords"], list) else entry["keywords"]
+
+                # Compute weighted embedding
+                summary_emb = embedder([summary])[0]
+                keyword_emb = embedder([keywords])[0]
+                weighted_emb = SUMMARY_WEIGHT * summary_emb + KEYWORDS_WEIGHT * keyword_emb
+
+                embeddings.append(weighted_emb.tolist())
                 documents.append(entry['text'])
                 metadatas.append({
                     "title": entry['title'],
                     "url": entry['url'],
-                    "keywords": ", ".join(entry["keywords"]) if isinstance(entry["keywords"], list) else entry["keywords"],
-                    "summary": entry['summary'],
+                    "keywords": keywords,
+                    "summary": summary,
                     "web_path": entry['web_path']
                 })
                 ids.append(entry['id'])
@@ -86,7 +99,8 @@ def index_vector_store(
             batch_docs = documents[i:i + batch_size]
             batch_meta = metadatas[i:i + batch_size]
             batch_ids = ids[i:i + batch_size]
-            collection.add(documents=batch_docs, metadatas=batch_meta, ids=batch_ids)
+            batch_embs = embeddings[i:i + batch_size]
+            collection.add(documents=batch_docs, metadatas=batch_meta, ids=batch_ids, embeddings=batch_embs)
             logger.info(f"✅ Indexed batch {i // batch_size + 1} — {len(batch_docs)} documents")
 
         index_end = time.time()
@@ -100,6 +114,8 @@ def index_vector_store(
 
     except Exception as e:
         logger.error(f"❌ Failed to index vector store: {e}")
+    
+    logger.info("💾 Persisted vector store to disk.")
 
 if __name__ == "__main__":
     import sys
@@ -108,3 +124,4 @@ if __name__ == "__main__":
     index_vector_store(jsonl_input_path=jsonl_path)
     total = time.time() - start_time
     logger.info(f"🎉 Indexing process completed in {total:.2f} seconds")
+
