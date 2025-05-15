@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # Author      : Anne-Laure MEALIER
 # Organization: Centrale Méditerranée
-# File        : generateRAG.py
+# File        : generate_rag.py
 # Description : Crawl and enrich web documentation using LLM, store in ChromaDB
 # Created     : 2024-05-14
 # License     : GPL-3.0

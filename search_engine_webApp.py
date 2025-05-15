@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # Author      : Anne-Laure MEALIER
 # Organization: Centrale Méditerranée
-# File        : searchEngineWebApp.py
+# File        : search_engine_webApp.py
 # Description : Supports RAG-only, LLM-only, and hybrid query modes.
 # Created     : 2024-05-14
 # License     : GPL-3.0
