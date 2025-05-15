@@ -1,177 +1,200 @@
-# 🔍 Conversational Search Engine for Documentation
+## 📘 RAG Search Assistant – Centrale MEALIER Edition
 
-This project implements a full **Retrieval-Augmented Generation (RAG)** pipeline using Python, designed to crawl technical documentation, embed and index its content, and provide a conversational interface for querying the knowledge base using a large language model (LLM).
-
-
-
-## 📁 Project Structure
-
-```bash
-.
-├── ragPipelineOllama.py       # Script to crawl, enrich, and index web content
-├── searchEngineAPI.py         # Streamlit-based search and chat UI
-├── logs/                      # Automatically created log files of pipeline execution
-├── chroma_db/                 # Vector store (created at runtime)
-├── enriched_pages.jsonl       # JSONL file containing enriched chunks (created at runtime)
-```
-
-## 🚀 Features
-
-* ✅ Web crawler with HTML content filtering
-* ✅ Chunking of text content into manageable paragraphs
-* ✅ Summary and keyword extraction using a local LLM via Ollama
-* ✅ Storage in [ChromaDB](https://www.trychroma.com/) vector database
-* ✅ Query interface with document similarity scoring
-* ✅ Conversational LLM responses with fallback strategies
-* ✅ Real-time execution progress and ETA estimation
-* ✅ Logging to both console and `logs/` folder
-
-## 🧠 Technologies Used
-
-| Component  | Tech Stack / Tools                              |
-| ---------- | ----------------------------------------------- |
-| Crawler    | `requests`, `BeautifulSoup`                     |
-| Chunking   | Paragraph-based with token limits               |
-| Enrichment | `Ollama` (e.g. `mistral:7b`, `deepseek`)        |
-| Embeddings | `sentence-transformers`, `ChromaDB`             |
-| Interface  | `Streamlit`                                     |
-| Similarity | Weighted cosine similarity (summary + keywords) |
-| Logging    | Python `logging`, auto-named `.log` files       |
+**Author**: Anne-Laure MEALIER
+**License**: GPL-3.0
+**Version**: 1.3
+**Last Updated**: 2024-05-14
 
 
+### 🎯 Overview
 
-## 🧪 How It Works
+This project implements a full **Retrieval-Augmented Generation (RAG)** pipeline, from **web crawling and enrichment** to **interactive question-answering** using a **local LLM** and **ChromaDB**.
 
-### 1. `ragPipelineOllama.py`: Build the Vector Store
+It enables:
 
-This script performs the following:
+* Crawling technical documentation from any website
+* Summarizing and enriching content using a local LLM via [Ollama](https://ollama.com/)
+* Embedding text via SentenceTransformers (GPU supported)
+* Storing embeddings in a **Chroma vector database**
+* Querying this knowledge base through a **web interface** (Dash) using:
 
-* Crawls a given base URL (e.g., [https://doc.cc.in2p3.fr/](https://doc.cc.in2p3.fr/))
-* Skips irrelevant file types (images, binaries, archives, etc.)
-* Extracts main content and chunks it into paragraphs
-* Sends each page to a local LLM via Ollama to get:
-
-  * ✅ A short summary
-  * ✅ A list of keywords
-* Saves each chunk into a `.jsonl` file
-* Creates embeddings (summary + keywords) and stores everything in ChromaDB
-
-You can monitor progress via:
-
-* Console and log output (page/chunk counts, ETA)
-* Automatically generated logs under `logs/`
-
-### 2. `searchEngineAPI.py`: Ask Questions via UI
-
-This script runs a Streamlit app that allows users to:
-
-* Input a natural language question
-* Find the top-5 most relevant document chunks (based on weighted summary/keyword embeddings)
-* View document info (summary, keywords, source URL)
-* Get LLM-generated answers depending on similarity level:
-
-  * 🔵 High (≥ 70%): direct LLM answer using context
-  * 🟡 Medium (40–69%): suggestion to ask LLM
-  * 🔴 Low (< 40%): LLM response without context
+  * RAG only
+  * LLM only
+  * Hybrid (RAG + LLM)
 
 
-## 📦 Setup Instructions
-
-### Requirements
-
-Install dependencies:
+## 📦 Project Structure
 
 ```bash
-pip install streamlit sentence-transformers chromadb scikit-learn beautifulsoup4 requests bs4 sentence_transformers tiktoken dash dash_bootstrap_components torch asyncio markdown xhtml2pdf
-```
-
-Dependencies include:
-
-* `requests`
-* `beautifulsoup4`
-* `chromadb`
-* `sentence-transformers`
-* `scikit-learn`
-* `streamlit`
-* `numpy`
-
-### Start Ollama Server
-
-Make sure Ollama is running locally with your preferred model:
-
-```bash
-ollama serve
-ollama run deepseek-r1:14b
+project-root/
+├── assets/
+│   └── logo_centrale.svg         # Centrale Médietrranée logo for the web app
+├── logs/                         # Log files from pipeline and indexing
+├── chroma_db/                    # Persistent ChromaDB store
+├── enriched_pages.jsonl          # Output of RAG content enrichment
+├── generateRAG.py                # Crawl + enrich + embed + store
+├── vector_indexing.py           # Index JSONL to ChromaDB with weighted embeddings
+├── embed_worker.py              # Fast GPU-ready embedding subprocess
+├── searchEngineWebApp.py        # Dash app interface for querying
+└── README.md                     # You are here 🚀
 ```
 
 
-## 🧰 Usage
+## 🚀 Quick Start
 
-### Step 1: Run the Data Pipeline
-
-```bash
-python ragPipelineOllama.py
-```
-
-This will generate:
-
-* `enriched_pages.jsonl`
-* Populate your local ChromaDB vector store
-
-### Step 2: Launch the Streamlit UI
+### 1. Install Dependencies
 
 ```bash
-streamlit run searchEngineAPI.py
+pip install -r requirements.txt
 ```
 
-Navigate to `http://localhost:8501` in your browser and start asking questions!
+<details>
+<summary>📦 Example <code>requirements.txt</code></summary>
+
+```txt
+dash
+dash-bootstrap-components
+markdown
+xhtml2pdf
+beautifulsoup4
+requests
+chromadb
+sentence-transformers
+numpy
+torch
+scikit-learn
+bs4
+tiktoken
+asyncio
+```
+ 
+
+</details>
 
 
-## 📊 Logs and Monitoring
+### 2. Run the Full RAG Pipeline
 
-* Execution logs are written both to console and to timestamped files under `./logs/`
-* Example: `logs/pipeline_log_20240514_1830.log`
-* These logs include:
+```bash
+python generateRAG.py https://your.website.com/
+```
 
-  * Pages processed
-  * Chunks generated
-  * ETA estimation
-  * Errors (if any)
-
-
-## 📌 Example Use Case
-
-> Ask: **"How do I install a Python package with Conda?"**
-
-You’ll see:
-
-* The top matching document(s)
-* Their summary and keywords
-* An AI-generated response using context, if available
+* Crawls all HTML pages from the base URL
+* Summarizes each with an LLM
+* Generates keyword lists
+* Chunks content and stores enriched JSONL
+* Computes vector embeddings
+* Stores everything into ChromaDB
 
 
-## 🔒 Limitations & Considerations
+### 3. (Optional) Re-index with Weighted Embeddings
 
-* Only HTML pages are processed — binary formats (PDFs, images, etc.) are skipped
-* LLM must be running locally via [Ollama](https://ollama.com/)
-* Large crawls may consume considerable time and memory
+```bash
+python vector_indexing.py enriched_pages.jsonl
+```
 
-
-## 📁 Optional Improvements
-
-* Add PDF parsing support with `PyMuPDF` or `pdfminer`
-* Use language-specific chunking (e.g., sentence-based for multi-lingual support)
-* Add vector search filtering by topic, date, or section
-* Support multiple base URLs or domains
+* Uses a weighted combination of **summary** and **keywords**
+* Optimized for fast GPU embedding
 
 
-## 📝 License
+### 4. Launch the Dash Web App
 
-This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
+```bash
+python searchEngineWebApp.py
+```
+
+* Open `http://127.0.0.1:8050` in your browser
+* Ask questions in English or French
+* Toggle modes: Hybrid, RAG-only, or LLM-only
+* Download responses as PDFs
+* View sources with similarity scores
+
+
+## 🧠 Architecture
+
+### 1. **generateRAG.py**
+
+* Crawls HTML pages from a base URL
+* Extracts text, enriches with LLM (summary + keywords)
+* Outputs a `.jsonl` file
+* Embeds chunks and stores in ChromaDB
+
+### 2. **vector\_indexing.py**
+
+* (Optional) Reindexes `.jsonl` with custom weights:
+
+  * `0.8 * summary + 0.2 * keywords`
+* Uses `paraphrase-multilingual-MiniLM` with GPU acceleration
+
+### 3. **embed\_worker.py**
+
+* Lightweight subprocess for embedding queries
+* Used by the Dash app
+* Returns a vector from stdin JSON input
+
+### 4. **searchEngineWebApp.py**
+
+* Frontend with Dash and Bootstrap (CYBORG theme)
+* User asks question → Query is embedded → Search ChromaDB
+* LLM answers using RAG content or own knowledge
+* PDF export and source display included
+
+
+## 🖼️ Web Interface
+
+* 🧠 Query interface with text area
+* 🔁 Modes: RAG-only, Hybrid, LLM-only
+* 📚 Show source URLs and scores (sorted by relevance)
+* 📄 PDF export of full Q\&A session
+
+
+## ⚙️ Configuration
+
+Modify these constants in `searchEngineWebApp.py`:
+
+```python
+TOP_K = 50                # Number of top matches to retrieve
+THRESHOLD_GOOD = 0.70     # Minimum score to consider a match relevant
+DEFAULT_LLM_MODEL = "gemma3:4b"  # Ollama model to use
+DEFAULT_QUERY_MODE = "rag_only"  # Starting mode
+```
+
+
+## 📌 Notes
+
+* The system assumes Ollama is running locally at `http://localhost:11434`
+* Embedding and inference prefer GPU (if available)
+* All logs are stored in `/logs` with timestamps
+* Files in `/assets` (like logos) are auto-served by Dash
+
+
+## 🧪 Testing
+
+To test locally:
+
+```bash
+# Crawl test site
+python generateRAG.py https://doc.cc.in2p3.fr/
+
+# Index generated file
+python vector_indexing.py enriched_pages.jsonl
+
+# Launch app
+python searchEngineWebApp.py
+```
+
+## 📄 License
+
+This project is licensed under the [GPL-3.0 License](https://www.gnu.org/licenses/gpl-3.0.html)
 
 You are free to use, modify, and distribute this software, provided that:
-- The source code remains open and publicly accessible under the same license.
-- Any derivative works or modified versions are also released under GPL-3.0.
-- Appropriate credit is given to the original author.
 
-For full terms, see the [GNU GPL v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html).
+The source code remains open and publicly accessible under the same license.
+Any derivative works or modified versions are also released under GPL-3.0.
+Appropriate credit is given to the original author.
+
+
+## 👩‍🔬 Author
+
+**Anne-Laure MEALIER**
+Centrale Méditerranée – 2024
+Optimized for GPU acceleration and on-premise privacy

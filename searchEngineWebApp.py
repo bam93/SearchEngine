@@ -1,3 +1,16 @@
+# -----------------------------------------------------------------------------
+# Author      : Anne-Laure MEALIER
+# Organization: Centrale Méditerranée
+# File        : searchEngineWebApp.py
+# Description : Supports RAG-only, LLM-only, and hybrid query modes.
+# Created     : 2024-05-14
+# License     : GPL-3.0
+# Version     : 1.3 (Interactive frontend built with Dash and Dash Bootstrap Components.)
+#
+# A Dash-based web application that implements a Retrieval-Augmented Generation (RAG) assistant using ChromaDB,
+# custom embedding via a subprocess, and a local LLM (served via Ollama).
+# -----------------------------------------------------------------------------
+
 import json
 import subprocess
 import numpy as np
@@ -16,7 +29,7 @@ TOP_K = 50
 THRESHOLD_GOOD = 0.70
 DEFAULT_LLM_MODEL = "gemma3:4b"
 DEFAULT_LANGUAGE = "EN"
-DEFAULT_QUERY_MODE = "hybrid"
+DEFAULT_QUERY_MODE = "rag_only"
 
 # --- Load Chroma Collection ---
 client = PersistentClient(path="./chroma_db")
@@ -161,7 +174,9 @@ app.title = "RAG Assistant"
 app.layout = dbc.Container([
     dbc.Row([
         dbc.Col(html.H2("🤖 RAG Assistant", className="text-primary"), width=8),
-        dbc.Col(html.Img(src="https://www.svgrepo.com/show/331368/ai.svg", height="60px"), width=4, style={"textAlign": "right"})
+        dbc.Col(html.Img(src="/assets/logo_centrale.svg", height="60px"), 
+        width=4, 
+        style={"textAlign": "right"})
     ], align="center"),
 
     html.Hr(),
@@ -215,14 +230,21 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col(dbc.Button("Submit", id="submit-button", color="success"), width="auto"),
         dbc.Col(dbc.Button("🧹 Clear Output", id="clear-button", color="warning", className="ms-2"), width="auto"),
-        dbc.Col(dbc.Checkbox(id="show-sources-toggle", value=False, className="ms-3"), width="auto"),
+        dbc.Col(dbc.Checkbox(id="show-sources-toggle", value=True, className="ms-3"), width="auto"),
         dbc.Col(html.Label("Show sources", className="mt-2"), width="auto")
     ], className="my-3", align="center"),
 
-    dbc.Card([html.Div(id="chat-history", children=[], style={"margin": "10px"})], color="dark", inverse=True),
-    html.Div(id="pdf-download", className="mt-3 text-end"),
+    dcc.Loading(
+        id="loading-output",
+        type="circle",  # or "default", "dot"
+        color="#00ff99",  # optional: you can change the spinner color
+        children=[
+            dbc.Card([html.Div(id="chat-history", children=[], style={"margin": "10px"})], color="dark", inverse=True),
+            html.Div(id="pdf-download", className="mt-3 text-end")
+        ]
+    ),
     dcc.Store(id="clear-question", data="")
-], fluid=True, className="p-4")
+], fluid=True, className="p-4", style={"backgroundColor": "#1e1e1e"})
 
 
 @app.callback(
@@ -250,12 +272,17 @@ def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, 
     answer, source_data = process_query(question, llm_model, lang, mode)
     formatted_answer = dcc.Markdown(answer)
 
-    if show_sources and source_data:
-        source_block = dcc.Markdown("\n".join([f"- {item['url']} (score: {item['score']})" for item in source_data]))
+    # Trier les sources par score décroissant (plus pertinent en premier)
+    sorted_sources = sorted(source_data, key=lambda x: x["score"], reverse=True)
+
+    if show_sources and sorted_sources:
+        source_block = dcc.Markdown("\n".join([f"- {item['url']} (score: {item['score']})" for item in sorted_sources]))
     else:
         source_block = ""
 
-    pdf_content = f"You: {question}\n\nAnswer:\n{answer}\n\nSources:\n" + "\n".join([f"- {item['url']} (score: {item['score']})" for item in source_data])
+    pdf_sources = "\n".join([f"- {item['url']} (score: {item['score']})" for item in sorted_sources])
+    pdf_content = f"You: {question}\n\nAnswer:\n{answer}\n\nSources:\n{pdf_sources}"
+
     pdf_base64 = generate_pdf(pdf_content)
     download_link = html.A("📄 Download PDF", href=f"data:application/pdf;base64,{pdf_base64}", download="rag_answer.pdf", target="_blank", className="btn btn-outline-info")
 
@@ -263,8 +290,20 @@ def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, 
         html.H5("🧑 You:", className="text-warning"),
         html.Div(question, style={"whiteSpace": "pre-wrap", "marginBottom": "10px"}),
         html.H5("🤖 Assistant:", className="text-success"),
-        formatted_answer,
-        html.Div([html.Strong("Sources used:"), source_block], style={"marginTop": "10px", "color": "#aaa", "fontSize": "0.85em"})
+        html.Div(formatted_answer, style={
+            "backgroundColor": "#2a2a2a",  # A bit lighter than black
+            "padding": "10px",
+            "borderRadius": "10px",
+            "marginBottom": "10px"
+        }),
+        html.Div([html.Strong("Sources used:"), source_block], style={
+            "marginTop": "10px",
+            "color": "#ccc",  # Lighter gray
+            "fontSize": "0.85em",
+            "backgroundColor": "#1e1e1e",
+            "padding": "8px",
+            "borderRadius": "6px"
+        })
     ], style={"marginBottom": "30px"})
 
     return history + [new_exchange], download_link, ""

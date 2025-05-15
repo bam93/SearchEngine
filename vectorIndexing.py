@@ -1,5 +1,6 @@
 # -----------------------------------------------------------------------------
 # Author      : Anne-Laure MEALIER
+# Organization: Centrale Méditerranée
 # File        : vector_indexing.py
 # Description : Indexes enriched JSONL into ChromaDB with GPU-accelerated embeddings
 # Created     : 2024-05-14
