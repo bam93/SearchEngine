@@ -5,6 +5,9 @@ from dash import Dash, html, dcc, Input, Output, State, ctx
 import dash_bootstrap_components as dbc
 from chromadb import PersistentClient
 import markdown
+from xhtml2pdf import pisa
+import base64
+import tempfile
 
 # --- Configuration ---
 TOP_K = 50
@@ -98,6 +101,20 @@ If relevant, enhance the response with complementary LLM knowledge and clearly i
 """
     return call_ollama_llm(prompt, llm_model), page_contexts
 
+# --- Generate PDF ---
+def generate_pdf(content):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        html_template = f"""
+        <html>
+        <head><meta charset='UTF-8'></head>
+        <body><pre>{content}</pre></body>
+        </html>
+        """
+        pisa.CreatePDF(html_template, dest=tmp_file)
+        tmp_file.seek(0)
+        pdf_data = tmp_file.read()
+    return base64.b64encode(pdf_data).decode("utf-8")
+
 # --- Dash App Setup ---
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.title = "RAG Assistant"
@@ -131,16 +148,20 @@ app.layout = dbc.Container([
 
     dbc.Row([
         dbc.Col(dbc.Button("Submit", id="submit-button", color="primary"), width="auto"),
+        dbc.Col(dbc.Button("🧹 Clear Output", id="clear-button", color="secondary", className="ms-2"), width="auto"),
         dbc.Col(dbc.Checkbox(id="show-sources-toggle", value=False, className="ms-3"), width="auto"),
         dbc.Col(html.Label("Show sources", className="mt-2"), width="auto")
     ], className="my-3", align="center"),
 
-    html.Div(id="chat-history", children=[], style={"marginTop": "20px"})
+    html.Div(id="chat-history", children=[], style={"marginTop": "20px"}),
+    html.Div(id="pdf-download")
 ])
 
 @app.callback(
     Output("chat-history", "children"),
+    Output("pdf-download", "children"),
     Input("submit-button", "n_clicks"),
+    Input("clear-button", "n_clicks"),
     State("question-input", "value"),
     State("show-sources-toggle", "value"),
     State("llm-selector", "value"),
@@ -148,9 +169,13 @@ app.layout = dbc.Container([
     State("chat-history", "children"),
     prevent_initial_call=True
 )
-def update_chat(n_clicks, question, show_sources, llm_model, lang, history):
+def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, lang, history):
+    triggered_id = ctx.triggered_id
+    if triggered_id == "clear-button":
+        return [], ""
+
     if not question:
-        return history + [html.Div("❗ Please enter a question.")]
+        return history + [html.Div("❗ Please enter a question.")], ""
 
     answer, source_data = process_query(question, llm_model, lang)
     formatted_answer = dcc.Markdown(answer)
@@ -160,6 +185,10 @@ def update_chat(n_clicks, question, show_sources, llm_model, lang, history):
     else:
         source_block = ""
 
+    pdf_content = f"You: {question}\n\nAnswer:\n{answer}\n\nSources:\n" + "\n".join([f"- {item['url']} (score: {item['score']})" for item in source_data])
+    pdf_base64 = generate_pdf(pdf_content)
+    download_link = html.A("📄 Download PDF", href=f"data:application/pdf;base64,{pdf_base64}", download="rag_answer.pdf", target="_blank")
+
     new_exchange = html.Div([
         html.H5("🧑 You:"),
         html.Div(question, style={"whiteSpace": "pre-wrap", "marginBottom": "10px"}),
@@ -168,7 +197,7 @@ def update_chat(n_clicks, question, show_sources, llm_model, lang, history):
         html.Div([html.Strong("Sources used:"), source_block], style={"marginTop": "10px", "color": "#666", "fontSize": "0.85em"})
     ], style={"marginBottom": "30px"})
 
-    return history + [new_exchange]
+    return history + [new_exchange], download_link
 
 if __name__ == "__main__":
     app.run(debug=True)
