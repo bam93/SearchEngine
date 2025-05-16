@@ -77,10 +77,54 @@ def call_ollama_llm(prompt, model, temperature=0.1):
     except Exception as e:
         return f"LLM API exception: {str(e)}"
 
-
 # --- RAG Logic ---
+# --- Traductions pour l'interface ---
+def get_translations(lang):
+    if lang == "FR":
+        return {
+            "ask_placeholder": "Posez votre question...",
+            "model_label": "Modèle",
+            "language_label": "Langue",
+            "mode_label": "Mode « Assistant »",
+            "mode_tooltip": "Choisissez comment l'assistant doit répondre :\n- Hybride : RAG avec complément LLM\n- RAG seul : uniquement depuis les documents\n- LLM seul : uniquement les connaissances du LLM",
+            "submit": "Soumettre",
+            "clear": "Effacer",
+            "show_sources": "Afficher les sources",
+            "you": "🧑 Vous",
+            "assistant": "🤖 Assistant",
+            "sources_used": "Sources utilisées :",
+            "download_pdf": "📄 Télécharger PDF",
+            "no_question": "❗ Veuillez entrer une question."
+        }
+    else:
+        return {
+            "ask_placeholder": "Ask your question...",
+            "model_label": "Model",
+            "language_label": "Language",
+            "mode_label": "Mode",
+            "mode_tooltip": "Choose how the assistant should answer:\n- Hybrid: RAG with LLM enhancement\n- RAG Only: answer only from documents\n- LLM Only: use only the LLM's internal knowledge",
+            "submit": "Submit",
+            "clear": "Clear Output",
+            "show_sources": "Show sources",
+            "you": "🧑 You",
+            "assistant": "🤖 Assistant",
+            "sources_used": "Sources used:",
+            "download_pdf": "📄 Download PDF",
+            "no_question": "❗ Please enter a question."
+        }
+
+# --- Adaptation dynamique du prompt ---
 def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
     temperature = 0.1 if mode == "rag_only" else 0.4 if mode == "hybrid" else 0.7
+
+    if lang == "FR":
+        intro = "Vous êtes un assistant expert qui aide les utilisateurs à comprendre de la documentation technique."
+        instruction_rag = "Fournissez une réponse détaillée, structurée et pratique uniquement à partir de la documentation fournie."
+        instruction_hybrid = "Ajoutez des compléments issus du LLM si pertinent, en les identifiant clairement."
+    else:
+        intro = "You are an expert assistant helping users understand technical documentation."
+        instruction_rag = "Provide a detailed, structured, and practical answer using only the provided documentation."
+        instruction_hybrid = "If relevant, enhance the response with complementary LLM knowledge and clearly indicate what part comes from the LLM."
 
     if mode == "llm_only":
         return call_ollama_llm(user_question, llm_model, temperature=temperature), []
@@ -99,18 +143,16 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
 
     if not docs or scores[0] < THRESHOLD_GOOD:
         if mode == "rag_only":
-            return "⚠️ No relevant documents found in RAG-only mode.", []
+            return ("\u26a0\ufe0f Aucun document pertinent trouvé en mode RAG-seul." if lang == "FR"
+                    else "\u26a0\ufe0f No relevant documents found in RAG-only mode."), []
         return call_ollama_llm(user_question, llm_model, temperature=temperature), []
 
     page_map = {}
     for doc, meta, score in zip(docs, metas, scores):
         url = meta.get("url", "")
         if score >= THRESHOLD_GOOD and url not in page_map:
-            page_map[url] = {
-                "text": doc,
-                "score": round(score, 4)
-            }
-        elif score >= THRESHOLD_GOOD and url in page_map:
+            page_map[url] = {"text": doc, "score": round(score, 4)}
+        elif score >= THRESHOLD_GOOD:
             page_map[url]["text"] += "\n" + doc
 
     page_contexts = [
@@ -123,7 +165,7 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
 
     if mode == "rag_only":
         prompt = f"""
-You are an expert assistant helping users understand technical documentation.
+{intro}
 
 Sources:
 {chr(10).join('- ' + url for url in all_urls)}
@@ -133,11 +175,11 @@ Documentation:
 
 Question: {user_question}
 
-Provide a detailed, structured, and practical answer using only the provided documentation. Do not use any external or internal knowledge.
+{instruction_rag}
 """
     else:
         prompt = f"""
-You are an expert assistant helping users understand technical documentation.
+{intro}
 
 Sources:
 {chr(10).join('- ' + url for url in all_urls)}
@@ -147,11 +189,12 @@ Documentation:
 
 Question: {user_question}
 
-Provide a detailed, structured, and practical answer. Include examples (e.g., Python, Bash) when applicable.
-If relevant, enhance the response with complementary LLM knowledge and clearly indicate what part comes from the LLM.
+{instruction_rag}
+{instruction_hybrid}
 """
 
     return call_ollama_llm(prompt, llm_model, temperature=temperature), page_contexts
+
 
 # --- Generate PDF ---
 def generate_pdf(content):
