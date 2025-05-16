@@ -100,7 +100,8 @@ python vector_indexing.py enriched_pages.jsonl
 
 * Uses a weighted combination of **summary** and **keywords**
 * Optimized for fast GPU embedding
-
+* Choose embeddings between sentence-transformers/paraphrase-multilingual-mpnet-base-v2 
+        & sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 
 ### 4. Launch the Dash Web App
 

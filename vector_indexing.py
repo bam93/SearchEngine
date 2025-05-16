@@ -41,7 +41,7 @@ class GPUEmbedder(EmbeddingFunction):
         import torch
         from sentence_transformers import SentenceTransformer
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", device=self.device)
+        self.model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-mpnet-base-v2", device=self.device)
         logger.info(f"✅ Embedding model loaded on: {self.device}")
 
     def __call__(self, texts):
