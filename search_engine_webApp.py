@@ -94,7 +94,8 @@ def get_translations(lang):
             "assistant": "🤖 Assistant",
             "sources_used": "Sources utilisées :",
             "download_pdf": "📄 Télécharger PDF",
-            "no_question": "❗ Veuillez entrer une question."
+            "no_question": "❗ Veuillez entrer une question.",
+            "no_relevant_docs": "⚠️ Aucun document pertinent trouvé."
         }
     else:
         return {
@@ -110,12 +111,15 @@ def get_translations(lang):
             "assistant": "🤖 Assistant",
             "sources_used": "Sources used:",
             "download_pdf": "📄 Download PDF",
-            "no_question": "❗ Please enter a question."
+            "no_question": "❗ Please enter a question.",
+            "no_relevant_docs": "⚠️ No relevant documents found."
         }
 
 # --- Adaptation dynamique du prompt ---
 def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
     temperature = 0.1 if mode == "rag_only" else 0.4 if mode == "hybrid" else 0.7
+
+    translations = get_translations(lang)
 
     if lang == "FR":
         intro = "Vous êtes un assistant expert qui aide les utilisateurs à comprendre de la documentation technique."
@@ -141,18 +145,22 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
     metas = results.get("metadatas", [[]])[0]
     scores = results.get("distances", [[]])[0]
 
-    if not docs or scores[0] < THRESHOLD_GOOD:
-        if mode == "rag_only":
-            return ("\u26a0\ufe0f Aucun document pertinent trouvé en mode RAG-seul." if lang == "FR"
-                    else "\u26a0\ufe0f No relevant documents found in RAG-only mode."), []
-        return call_ollama_llm(user_question, llm_model, temperature=temperature), []
+    # Filtrage strict des documents pertinents
+    relevant_data = [
+        (doc, meta, score)
+        for doc, meta, score in zip(docs, metas, scores)
+        if score >= THRESHOLD_GOOD
+    ]
+
+    if not relevant_data:
+        return translations["no_relevant_docs"], []
 
     page_map = {}
-    for doc, meta, score in zip(docs, metas, scores):
+    for doc, meta, score in relevant_data:
         url = meta.get("url", "")
-        if score >= THRESHOLD_GOOD and url not in page_map:
+        if url not in page_map:
             page_map[url] = {"text": doc, "score": round(score, 4)}
-        elif score >= THRESHOLD_GOOD:
+        else:
             page_map[url]["text"] += "\n" + doc
 
     page_contexts = [
@@ -194,7 +202,6 @@ Question: {user_question}
 """
 
     return call_ollama_llm(prompt, llm_model, temperature=temperature), page_contexts
-
 
 # --- Generate PDF ---
 def generate_pdf(content):
