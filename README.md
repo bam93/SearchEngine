@@ -56,7 +56,6 @@ pip install -r requirements.txt
 ```txt
 dash
 dash-bootstrap-components
-markdown
 xhtml2pdf
 beautifulsoup4
 requests
@@ -68,6 +67,7 @@ scikit-learn
 bs4
 tiktoken
 asyncio
+markdown2
 ```
  
 
