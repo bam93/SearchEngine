@@ -17,10 +17,10 @@ import numpy as np
 from dash import Dash, html, dcc, Input, Output, State, ctx
 import dash_bootstrap_components as dbc
 from chromadb import PersistentClient
-import markdown
 from xhtml2pdf import pisa
-import base64
+from markdown2 import markdown
 import tempfile
+import base64
 import sys
 import requests
 
@@ -131,7 +131,14 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
         instruction_hybrid = "If relevant, enhance the response with complementary LLM knowledge and clearly indicate what part comes from the LLM."
 
     if mode == "llm_only":
-        return call_ollama_llm(user_question, llm_model, temperature=temperature), []
+        prompt = f"""
+{intro}
+
+Question: {user_question}
+
+Answer strictly using the LLM's internal knowledge.
+"""
+        return call_ollama_llm(prompt, llm_model, temperature=temperature), []
 
     query_emb = embed_texts([user_question])[0]
 
@@ -171,8 +178,7 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
     all_text = "\n\n".join(p["text"] for p in page_contexts)
     all_urls = [p["url"] for p in page_contexts]
 
-    if mode == "rag_only":
-        prompt = f"""
+    prompt = f"""
 {intro}
 
 Sources:
@@ -185,38 +191,38 @@ Question: {user_question}
 
 {instruction_rag}
 """
-    else:
-        prompt = f"""
-{intro}
-
-Sources:
-{chr(10).join('- ' + url for url in all_urls)}
-
-Documentation:
-{all_text}
-
-Question: {user_question}
-
-{instruction_rag}
-{instruction_hybrid}
-"""
+    if mode == "hybrid":
+        prompt += f"\n{instruction_hybrid}"
 
     return call_ollama_llm(prompt, llm_model, temperature=temperature), page_contexts
 
-# --- Generate PDF ---
-def generate_pdf(content):
+# --- PDF with markdown rendering ---
+def generate_pdf(content, lang):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         html_template = f"""
         <html>
-        <head><meta charset='UTF-8'></head>
-        <body><pre>{content}</pre></body>
+        <head>
+            <meta charset='UTF-8'>
+            <style>
+                body {{ font-family: Helvetica, sans-serif; line-height: 1.4; font-size: 12pt; }}
+                h1, h2, h3 {{ color: #2c3e50; }}
+                code {{ background-color: #f4f4f4; padding: 2px 4px; }}
+            </style>
+        </head>
+        <body>{markdown(content)}</body>
         </html>
         """
-        pisa.CreatePDF(html_template, dest=tmp_file)
+        pisa_status = pisa.CreatePDF(html_template, dest=tmp_file)
         tmp_file.seek(0)
         pdf_data = tmp_file.read()
-    return base64.b64encode(pdf_data).decode("utf-8")
-
+    return html.A(
+        get_translations(lang)["download_pdf"],
+        href=f"data:application/pdf;base64,{base64.b64encode(pdf_data).decode('utf-8')}",
+        download="rag_answer.pdf",
+        target="_blank",
+        className="btn btn-outline-info mt-3"
+    )
+    
 # --- Dash App Setup ---
 app = Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])
 app.title = "RAG Assistant"
@@ -333,8 +339,7 @@ def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, 
     pdf_sources = "\n".join([f"- {item['url']} (score: {item['score']})" for item in sorted_sources])
     pdf_content = f"You: {question}\n\nAnswer:\n{answer}\n\nSources:\n{pdf_sources}"
 
-    pdf_base64 = generate_pdf(pdf_content)
-    download_link = html.A("📄 Download PDF", href=f"data:application/pdf;base64,{pdf_base64}", download="rag_answer.pdf", target="_blank", className="btn btn-outline-info")
+    download_link = generate_pdf(pdf_content, lang)
 
     new_exchange = html.Div([
         html.H5("🧑 You:", className="text-warning"),

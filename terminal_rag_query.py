@@ -1,18 +1,12 @@
-# -----------------------------------------------------------------------------
-# Author      : Anne-Laure MEALIER
-# Organization: Centrale Méditerranée
-# File        : terminal_rag_query.py
-# Description : Interactive terminal-based RAG assistant using ChromaDB and local LLMs.
-# Created     : 2024-05-15
-# License     : GPL-3.0
-# Version     : 1.1 (Langue dynamique + seuil stricte)
-# -----------------------------------------------------------------------------
-
 import json
 import subprocess
 import numpy as np
 import requests
 import tempfile
+import os
+import webbrowser
+from markdown2 import markdown
+from xhtml2pdf import pisa
 from chromadb import PersistentClient
 
 TOP_K = 50
@@ -67,7 +61,8 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
     t = get_translations(lang)
 
     if mode == "llm_only":
-        return call_ollama_llm(user_question, llm_model, temperature), []
+        prompt = f"{t['intro']}\n\nQuestion: {user_question}\n\nAnswer strictly using the LLM's internal knowledge."
+        return call_ollama_llm(prompt, llm_model, temperature), []
 
     query_emb = embed_texts([user_question])[0]
     results = collection.query(query_embeddings=[query_emb], n_results=TOP_K, include=["documents", "metadatas", "distances"])
@@ -101,20 +96,30 @@ Documentation:
 
 Question: {user_question}
 
-{t['instr_rag']}
-"""
+{t['instr_rag']}"""
     if mode == "hybrid":
         prompt += f"\n{t['instr_hybrid']}"
 
     return call_ollama_llm(prompt, llm_model, temperature), page_contexts
 
-def generate_pdf(content):
-    from xhtml2pdf import pisa
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-        html_template = f"<html><body><pre>{content}</pre></body></html>"
-        pisa.CreatePDF(html_template, dest=tmp_file)
-        tmp_file.seek(0)
-        return tmp_file.name
+def generate_pdf(content, filename="rag_answer.pdf"):
+    html_template = f"""
+    <html>
+    <head>
+        <meta charset='UTF-8'>
+        <style>
+            body {{ font-family: Helvetica, sans-serif; line-height: 1.4; font-size: 12pt; }}
+            h1, h2, h3 {{ color: #2c3e50; }}
+            code {{ background-color: #f4f4f4; padding: 2px 4px; }}
+        </style>
+    </head>
+    <body>{markdown(content)}</body>
+    </html>
+    """
+    output_path = os.path.join(os.getcwd(), filename)
+    with open(output_path, "wb") as f:
+        pisa.CreatePDF(html_template, dest=f)
+    return output_path
 
 def main():
     print("📚 Welcome to RAG Terminal Assistant")
@@ -140,10 +145,14 @@ def main():
                 print(f"- {s['url']} (score: {s['score']})")
 
         if input("\n💾 Export to PDF? (y/n): ").strip().lower() == "y":
-            content = f"You: {question}\n\nAnswer:\n{answer}\n\nSources:\n" + \
+            content = f"# Question\n{question}\n\n# Answer\n{answer}\n\n# Sources\n" + \
                       "\n".join([f"- {s['url']} (score: {s['score']})" for s in sources])
             path = generate_pdf(content)
-            print(f"✅ PDF saved to: {path}")
+            print(f"✅ PDF saved: {path}")
+            try:
+                webbrowser.open(f"file://{path}")
+            except:
+                print("⚠️ Could not open the PDF automatically.")
 
         if input("\n⚙️ Change mode/lang? (y/n): ").strip().lower() == "y":
             mode_input = input("Mode (rag_only / hybrid / llm_only): ").strip().lower()
