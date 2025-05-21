@@ -200,8 +200,11 @@ python vector_indexing.py enriched_pages.jsonl
 
 * Uses a weighted combination of **summary** and **keywords**
 * Optimized for fast GPU embedding
-* Choose embeddings between sentence-transformers/paraphrase-multilingual-mpnet-base-v2 
-        OR sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+* Choose embeddings between 
+    - **sentence-transformers/paraphrase-multilingual-mpnet-base-v2**  
+    This is a sentence-transformers model: It maps sentences & paragraphs to a 768 dimensional dense vector space and can be used for tasks like clustering or semantic search.
+    - **sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2** 
+    This is a sentence-transformers model: It maps sentences & paragraphs to a 384 dimensional dense vector space and can be used for tasks like clustering or semantic search.
 
 ### 4. Launch the Dash Web App
 
