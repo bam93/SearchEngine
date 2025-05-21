@@ -117,7 +117,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 #### Getting Started
 
-****Run Your First Model**
+**Run Your First Model**
 
 Pull and run a model (e.g., `gemma3`):
 
