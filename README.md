@@ -184,6 +184,11 @@ python generate_RAG.py https://your.website.com/
 * Computes vector embeddings
 * Stores everything into ChromaDB
 
+Image from the Medium website - medium.com @arunpatidar
+![RAG with ChromaDB and Ollama](https://miro.medium.com/v2/resize:fit:1100/format:webp/1*CZTdupa4MBQgsKi9_0ojJg.png)
+
+Image from the Medium website - medium.com @jorgepit-14189 
+![ChromaDB](https://miro.medium.com/v2/resize:fit:720/format:webp/0*BU1rSIzgJRqzk5Bp.png)
 
 ### 3. (Optional) Re-index with Weighted Embeddings
 
