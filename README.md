@@ -78,7 +78,9 @@ markdown2
 
 *What is Ollama?*
 
-**Ollama** is a tool that allows you to run open-source large language models like LLaMA, Mistral, or Gemma locally on your machine with minimal setup.
+**Ollama** Ollama is a tool that lets you run large language models like LLaMA, Mistral, or Gemma locally on your computer.
+It provides a simple CLI and API interface for downloading, running, and managing models.
+**Ollama is designed for ease of use, privacy, and performance without needing the cloud.**
 
 
 ### Installation
@@ -304,5 +306,6 @@ Appropriate credit is given to the original author.
 ## 👩‍🔬 Author
 
 **Anne-Laure MEALIER**
-Centrale Méditerranée – 2024
+Centrale Méditerranée – 2025
+
 Optimized for GPU acceleration and on-premise privacy
