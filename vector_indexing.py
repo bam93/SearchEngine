@@ -5,7 +5,7 @@
 # Description : Indexes enriched JSONL into ChromaDB with GPU-accelerated embeddings
 # Created     : 2024-05-14
 # License     : GPL-3.0
-# Version     : 1.3 (Optimized for speed and embedding performance)
+# Version     : 1.4 (Optimized for batching and embedding performance)
 # -----------------------------------------------------------------------------
 
 import os
@@ -49,10 +49,26 @@ class GPUEmbedder(EmbeddingFunction):
         embeddings = self.model.encode(texts, convert_to_numpy=True, show_progress_bar=False, batch_size=64)
         if np.all(embeddings == 0):
             logger.warning("⚠️ All generated embeddings are zeros.")
-        else:
-            logger.info(f"🔍 First embedding norm: {np.linalg.norm(embeddings[0]):.4f}")
         return embeddings
 
+# === Generate Weighted Embeddings in Batch ===
+def generate_weighted_embeddings(embedder, summaries, keywords_list, log_samples=5):
+    import numpy as np
+    logger.info("⚙️ Encoding summaries in batch...")
+    summary_embs = embedder(summaries)
+    logger.info("⚙️ Encoding keywords in batch...")
+    keyword_embs = embedder(keywords_list)
+
+    weighted_embeddings = []
+    for idx, (s_emb, k_emb) in enumerate(zip(summary_embs, keyword_embs)):
+        weighted_emb = SUMMARY_WEIGHT * s_emb + KEYWORDS_WEIGHT * k_emb
+        weighted_embeddings.append(weighted_emb.tolist())
+        if idx < log_samples:
+            norm = np.linalg.norm(weighted_emb)
+            logger.info(f"🔍 Norm of embedding for sample {idx + 1}: {norm:.4f}")
+    return weighted_embeddings
+
+# === Indexer Function ===
 def index_vector_store(
     jsonl_input_path: str,
     chroma_collection_name: str = "web_chunks",
@@ -69,7 +85,9 @@ def index_vector_store(
         embedding_function=None  # We supply embeddings manually
     )
 
-    documents, metadatas, ids, embeddings = [], [], [], []
+    documents, metadatas, ids = [], [], []
+    summaries, keywords_list = [], []
+
     try:
         with open(jsonl_input_path, 'r', encoding='utf-8') as f:
             for line in f:
@@ -77,12 +95,9 @@ def index_vector_store(
                 summary = entry.get("summary", "")
                 keywords = ", ".join(entry["keywords"]) if isinstance(entry["keywords"], list) else entry["keywords"]
 
-                # Compute weighted embedding
-                summary_emb = embedder([summary])[0]
-                keyword_emb = embedder([keywords])[0]
-                weighted_emb = SUMMARY_WEIGHT * summary_emb + KEYWORDS_WEIGHT * keyword_emb
+                summaries.append(summary)
+                keywords_list.append(keywords)
 
-                embeddings.append(weighted_emb.tolist())
                 documents.append(entry['text'])
                 metadatas.append({
                     "title": entry['title'],
@@ -95,6 +110,8 @@ def index_vector_store(
 
         total = len(documents)
         logger.info(f"📦 Loaded {total} documents from {jsonl_input_path}")
+
+        embeddings = generate_weighted_embeddings(embedder, summaries, keywords_list)
 
         for i in range(0, total, batch_size):
             batch_docs = documents[i:i + batch_size]
@@ -115,9 +132,10 @@ def index_vector_store(
 
     except Exception as e:
         logger.error(f"❌ Failed to index vector store: {e}")
-    
+
     logger.info("💾 Persisted vector store to disk.")
 
+# === Entry Point ===
 if __name__ == "__main__":
     import sys
     start_time = time.time()
@@ -125,4 +143,3 @@ if __name__ == "__main__":
     index_vector_store(jsonl_input_path=jsonl_path)
     total = time.time() - start_time
     logger.info(f"🎉 Indexing process completed in {total:.2f} seconds")
-

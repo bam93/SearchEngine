@@ -70,8 +70,8 @@ Here is a web article:
 {text[:1500]}
 
 Please return:
-1. A short summary (3-5 sentences)
-2. A list of 5 to 10 keywords
+1. A short summary (3–5 sentences) in the same language as the article
+2. A list of 5 to 10 keywords, also in the original language
 
 Expected JSON format:
 {{
