@@ -121,32 +121,23 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
 
     translations = get_translations(lang)
  
-#if lang == "FR":
-#    intro = "Vous êtes un assistant expert qui aide les utilisateurs à comprendre de la documentation technique."
-#    instruction_rag = "Fournissez une réponse détaillée, structurée et pratique uniquement à partir de la documentation fournie."
-#    instruction_hybrid = "Ajoutez des
-#     compléments issus du LLM si pertinent, en les identifiant clairement."
-#else:
-#    intro = "You are an expert assistant helping users understand technical documentation."
-#    instruction_rag = "Provide a detailed, structured, and practical answer using only the provided documentation."
-#    instruction_hybrid = "If relevant, enhance the response with complementary LLM knowledge and clearly indicate what part comes from the LLM."
-
     if lang == "FR":
-        intro = "Vous êtes un assistant administratif expert qui aide les utilisateurs à comprendre la documentation de la grande école d'ingénieur Centrale Méditerranée."
-        instruction_rag = "Fournissez une réponse détaillée dans un style académique, structurée et pratique uniquement à partir de la documentation fournie."
+        intro = "Vous êtes un assistant expert qui aide les utilisateurs à comprendre de la documentation technique."
+        instruction_rag = "Fournissez une réponse détaillée, structurée et pratique uniquement à partir de la documentation fournie."
         instruction_hybrid = "Ajoutez des compléments issus du LLM si pertinent, en les identifiant clairement."
     else:
-        intro = "You are an expert administrative assistant who helps users understand the documentation of the Big Éole d'Ingénieur Centrale Méditerranée."
-        instruction_rag = "Provide a detailed, structured, and practical answer in an academic style using only the provided documentation."
+        intro = "You are an expert assistant helping users understand technical documentation."
+        instruction_rag = "Provide a detailed, structured, and practical answer using only the provided documentation."
         instruction_hybrid = "If relevant, enhance the response with complementary LLM knowledge and clearly indicate what part comes from the LLM."
+
     if mode == "llm_only":
         prompt = f"""
-{intro}
+        {intro}
 
-Question: {user_question}
+        Question: {user_question}
 
-Answer strictly using the LLM's internal knowledge.
-"""
+        Answer strictly using the LLM's internal knowledge.
+        """
         return call_ollama_llm(prompt, llm_model, temperature=temperature), []
 
     query_emb = embed_texts([user_question])[0]

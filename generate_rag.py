@@ -51,7 +51,7 @@ def run_pipeline(
     base_url: str,
     jsonl_output_path: str = "enriched_pages.jsonl",
     chroma_collection_name: str = "web_chunks",
-    model: str = "deepseek-r1:14b",
+    model: str = "gemma3:4b",
     batch_size: int = 4000
 ):
     logger.info("🚀 Starting RAG pipeline")

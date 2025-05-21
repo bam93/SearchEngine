@@ -174,7 +174,7 @@ ollama rm gemma3:4b
 ### 2. Run the Full RAG Pipeline
 
 ```bash
-python generateRAG.py https://your.website.com/
+python generate_RAG.py https://your.website.com/
 ```
 
 * Crawls all HTML pages from the base URL
@@ -194,7 +194,7 @@ python vector_indexing.py enriched_pages.jsonl
 * Uses a weighted combination of **summary** and **keywords**
 * Optimized for fast GPU embedding
 * Choose embeddings between sentence-transformers/paraphrase-multilingual-mpnet-base-v2 
-        & sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+        OR sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 
 ### 4. Launch the Dash Web App
 
@@ -211,7 +211,7 @@ python searchEngineWebApp.py
 
 ## 🧠 Architecture
 
-### 1. **generateRAG.py**
+### 1. **generate_RAG.py**
 
 * Crawls HTML pages from a base URL
 * Extracts text, enriches with LLM (summary + keywords)
