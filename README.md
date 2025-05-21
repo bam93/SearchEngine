@@ -73,10 +73,103 @@ markdown2
 
 </details>
 
+
+**Ollama: Installation & Usage Guide**
+
+*What is Ollama?*
+
+**Ollama** is a tool that allows you to run open-source large language models like LLaMA, Mistral, or Gemma locally on your machine with minimal setup.
+
+
+### Installation
+
+#### 🔹 Requirements
+
+* macOS, Linux, or Windows (WSL supported)
+* x86\_64 or Apple Silicon (M1/M2)
+* At least 8GB RAM (16GB+ recommended for larger models)
+
+#### 🔹 Installation Steps
+
+*macOS*
+
 ```bash
-# Ollama manual install instructions
 curl -fsSL https://ollama.com/install.sh | sh
 ```
+
+*Linux*
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+> On some distros you may need to install dependencies (e.g., `libssl`, `curl`, `libc++`)
+
+#### Windows (via WSL)
+
+1. Install [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)
+2. Open your WSL terminal (e.g., Ubuntu)
+3. Run:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+#### Getting Started
+
+****Run Your First Model**
+
+Pull and run a model (e.g., `gemma3`):
+
+```bash
+ollama run gemma3:4b
+```
+
+This will:
+
+* Download the model if it's not already present
+* Open an interactive chat interface
+
+**Listing Available Models**
+
+```bash
+ollama list
+```
+
+
+**Using Ollama in Script**
+
+You can use the `ollama` CLI programmatically:
+
+```bash
+echo "What is the capital of France?" | ollama run llama2
+```
+
+**API Access**
+
+Ollama also runs a local HTTP API on port `11434`. Example:
+
+```bash
+curl http://localhost:11434/api/generate -d '{
+  "model": "gemma3:4b",
+  "prompt": "Tell me a joke"
+}'
+```
+
+**Model Management**
+
+*Remove a Model*
+
+```bash
+ollama rm gemma3:4b
+```
+
+**Resources**
+
+* [Ollama Website](https://ollama.com)
+* [GitHub Repository](https://github.com/ollama/ollama)
+* [Community Models](https://ollama.com/library)
+
 
 ### 2. Run the Full RAG Pipeline
 
@@ -180,7 +273,7 @@ To test locally:
 
 ```bash
 # Crawl test site
-python generateRAG.py https://doc.cc.in2p3.fr/
+python generate_rag.py https://doc.cc.in2p3.fr/
 
 # Index generated file
 python vector_indexing.py enriched_pages.jsonl
