@@ -84,7 +84,9 @@ markdown2
 
 *What is Ollama?*
 
-**Ollama** is a tool that allows you to run open-source large language models like LLaMA, Mistral, or Gemma locally on your machine with minimal setup.
+**Ollama** Ollama is a tool that lets you run large language models like LLaMA, Mistral, or Gemma locally on your computer.
+It provides a simple CLI and API interface for downloading, running, and managing models.
+**Ollama is designed for ease of use, privacy, and performance without needing the cloud.**
 
 Ollama is available for:
 
@@ -211,6 +213,11 @@ python generate_rag.py https://your.website.com/
 * Computes vector embeddings
 * Stores everything into ChromaDB
 
+Image from the Medium website - medium.com @arunpatidar
+![RAG with ChromaDB and Ollama](https://miro.medium.com/v2/resize:fit:1100/format:webp/1*CZTdupa4MBQgsKi9_0ojJg.png)
+
+Image from the Medium website - medium.com @jorgepit-14189 
+![ChromaDB](https://miro.medium.com/v2/resize:fit:720/format:webp/0*BU1rSIzgJRqzk5Bp.png)
 
 ### 3. (Optional) Re-index with Weighted Embeddings
 
@@ -220,8 +227,11 @@ python vector_indexing.py enriched_pages.jsonl
 
 * Uses a weighted combination of **summary** and **keywords**
 * Optimized for fast GPU embedding
-* Choose embeddings between sentence-transformers/paraphrase-multilingual-mpnet-base-v2 
-        OR sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+* Choose embeddings between 
+    - **sentence-transformers/paraphrase-multilingual-mpnet-base-v2**  
+    This is a sentence-transformers model: It maps sentences & paragraphs to a 768 dimensional dense vector space and can be used for tasks like clustering or semantic search.
+    - **sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2** 
+    This is a sentence-transformers model: It maps sentences & paragraphs to a 384 dimensional dense vector space and can be used for tasks like clustering or semantic search.
 
 ### 4. Launch the Dash Web App
 
@@ -329,5 +339,6 @@ Appropriate credit is given to the original author.
 ## 👩‍🔬 Author
 
 **Anne-Laure MEALIER**
-Centrale Méditerranée – 2024
+Centrale Méditerranée – 2025
+
 Optimized for GPU acceleration and on-premise privacy
