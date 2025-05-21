@@ -361,7 +361,8 @@ def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, 
         })
     ], style={"marginBottom": "30px"})
 
-    return history + [new_exchange], download_link, ""
+    return [new_exchange] + history, download_link, ""
+
 
 if __name__ == "__main__":
     app.run(debug=True)
