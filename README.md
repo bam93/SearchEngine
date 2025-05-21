@@ -32,7 +32,7 @@ project-root/
 ├── logs/                        # Log files from pipeline and indexing
 ├── chroma_db/                   # Persistent ChromaDB store
 ├── enriched_pages.jsonl         # Output of RAG content enrichment
-├── generate_RAG.py              # Crawl + enrich + embed + store
+├── generate_rag.py              # Crawl + enrich + embed + store
 ├── vector_indexing.py           # Index JSONL to ChromaDB with weighted embeddings
 ├── embed_worker.py              # Fast GPU-ready embedding subprocess
 ├── search_engine_WebApp.py      # Dash app interface for querying
@@ -46,12 +46,20 @@ project-root/
 
 ### 1. Install Dependencies
 
+#### 🔹 Python
+
+This tutorial assumes you have Python 3.12+ installed.
+
+It's recommended to use a virtual environment or a conda environment to avoid conflicts with other projects.
+
+Install the required packages with pip:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 <details>
-<summary>📦 Example <code>requirements.txt</code></summary>
+<summary>📦 <code>requirements.txt</code></summary>
 
 ```txt
 dash
@@ -69,35 +77,24 @@ tiktoken
 asyncio
 markdown2
 ```
- 
-
 </details>
 
 
-**Ollama: Installation & Usage Guide**
+#### 🔹 Ollama
 
 *What is Ollama?*
 
 **Ollama** is a tool that allows you to run open-source large language models like LLaMA, Mistral, or Gemma locally on your machine with minimal setup.
 
-
-### Installation
-
-#### 🔹 Requirements
+Ollama is available for:
 
 * macOS, Linux, or Windows (WSL supported)
 * x86\_64 or Apple Silicon (M1/M2)
 * At least 8GB RAM (16GB+ recommended for larger models)
 
-#### 🔹 Installation Steps
+Choose the installation method that suits your needs:
 
-*macOS*
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-*Linux*
+##### Linux using the script (privileged access required)
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
@@ -105,19 +102,47 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 > On some distros you may need to install dependencies (e.g., `libssl`, `curl`, `libc++`)
 
-#### Windows (via WSL)
-
-1. Install [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)
-2. Open your WSL terminal (e.g., Ubuntu)
-3. Run:
+##### Linux (manual install without privileged access)
 
 ```bash
-curl -fsSL https://ollama.com/install.sh | sh
+# Download the latest release
+wget https://ollama.com/download/ollama-linux-amd64.tgz
+# Extract the tarball to your local path
+tar -C /your/local/path -xzf ollama-linux-amd64.tgz
+# run the server
+/your/local/path/ollama serve
 ```
 
-#### Getting Started
+Replace `/your/local/path` with the directory where you want to install Ollama or add it to your PATH.
 
-****Run Your First Model**
+In case the port `11434` is already in use, you can specify a different port:
+
+```bash
+OLLAMA_HOST=127.0.0.1:11435 ollama serve
+```
+
+Take care in this case to update the python scripts to use the correct port url.
+
+##### macOS or Windows 10+
+
+For macOS or Windows 10+, you can install Ollama using the official installer: [Ollama website](https://ollama.com/download) and follow the instructions.
+
+##### Docker
+
+If you prefer to use Docker, you can run Ollama in a container:
+
+```bash
+docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
+```
+
+For Nvidia GPUs you'll need to install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#installation).
+
+See the official docker hub page for more details: [Ollama Docker Hub](https://hub.docker.com/r/ollama/ollama).
+
+
+#### 🔹 Ollama CLI
+
+**Run Your First Model**
 
 Pull and run a model (e.g., `gemma3`):
 
@@ -129,13 +154,13 @@ This will:
 
 * Download the model if it's not already present
 * Open an interactive chat interface
+* Use Ctrl + d or /bye to exit.
 
 **Listing Available Models**
 
 ```bash
 ollama list
 ```
-
 
 **Using Ollama in Script**
 
@@ -144,6 +169,8 @@ You can use the `ollama` CLI programmatically:
 ```bash
 echo "What is the capital of France?" | ollama run llama2
 ```
+
+If the model is not already downloaded, it will be pulled automatically.
 
 **API Access**
 
@@ -174,7 +201,7 @@ ollama rm gemma3:4b
 ### 2. Run the Full RAG Pipeline
 
 ```bash
-python generate_RAG.py https://your.website.com/
+python generate_rag.py https://your.website.com/
 ```
 
 * Crawls all HTML pages from the base URL
@@ -199,19 +226,22 @@ python vector_indexing.py enriched_pages.jsonl
 ### 4. Launch the Dash Web App
 
 ```bash
-python searchEngineWebApp.py
+python search_engine_webApp.py
 ```
 
 * Open `http://127.0.0.1:8050` in your browser
+  If you are running on a server, you may need to set up port forwarding:
+  ```bash
+  ssh -L 8050:localhost:8050 user@remote-server -N
+  ```
 * Ask questions in English or French
 * Toggle modes: Hybrid, RAG-only, or LLM-only
 * Download responses as PDFs
 * View sources with similarity scores
 
-
 ## 🧠 Architecture
 
-### 1. **generate_RAG.py**
+### 1. **generate_rag.py**
 
 * Crawls HTML pages from a base URL
 * Extracts text, enriches with LLM (summary + keywords)
@@ -231,7 +261,7 @@ python searchEngineWebApp.py
 * Used by the Dash app
 * Returns a vector from stdin JSON input
 
-### 4. **searchEngineWebApp.py**
+### 4. **search_engine_webApp.py**
 
 * Frontend with Dash and Bootstrap (CYBORG theme)
 * User asks question → Query is embedded → Search ChromaDB
@@ -249,7 +279,7 @@ python searchEngineWebApp.py
 
 ## ⚙️ Configuration
 
-Modify these constants in `searchEngineWebApp.py`:
+Modify these constants in `search_engine_webApp.py`:
 
 ```python
 TOP_K = 50                # Number of top matches to retrieve
