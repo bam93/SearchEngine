@@ -23,13 +23,13 @@ from functools import lru_cache
 from sentence_transformers import SentenceTransformer
 
 # --- Configuration ---
-TOP_K = 20
+TOP_K = 30
 THRESHOLD_GOOD = 0.70
 DEFAULT_LLM_MODEL = "gemma3:4b"
 DEFAULT_LANGUAGE = "EN"
 DEFAULT_QUERY_MODE = "rag_only"
 MAX_CHARS = 8000  # Truncate LLM context if too long
-TOP_K_RELEVANT = 5  # Number of most relevant documents to inject in the prompt
+TOP_K_RELEVANT = 20  # Number of most relevant documents to inject in the prompt
 
 
 # --- Load Chroma Collection ---
