@@ -34,7 +34,6 @@ project-root/
 ├── enriched_pages.jsonl         # Output of RAG content enrichment
 ├── generate_rag.py              # Crawl + enrich + embed + store
 ├── vector_indexing.py           # Index JSONL to ChromaDB with weighted embeddings
-├── embed_worker.py              # Fast GPU-ready embedding subprocess
 ├── search_engine_WebApp.py      # Dash app interface for querying
 ├── terminal_rag_query.py        # Terminal app for querying
 ├── requirements.txt             # Python packages required
