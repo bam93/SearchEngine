@@ -5,14 +5,10 @@
 # Description : Supports RAG-only, LLM-only, and hybrid query modes.
 # Created     : 2024-05-14
 # License     : GPL-3.0
-# Version     : 1.3 (Interactive frontend built with Dash and Dash Bootstrap Components.)
-#
-# A Dash-based web application that implements a Retrieval-Augmented Generation (RAG) assistant using ChromaDB,
-# custom embedding via a subprocess, and a local LLM (served via Ollama).
+# Version     : 1.5 (Optimized with embedding cache, latency indicator, and faster RAG)
 # -----------------------------------------------------------------------------
 
 import json
-import subprocess
 import numpy as np
 from dash import Dash, html, dcc, Input, Output, State, ctx
 import dash_bootstrap_components as dbc
@@ -21,38 +17,34 @@ from xhtml2pdf import pisa
 from markdown2 import markdown
 import tempfile
 import base64
-import sys
 import requests
+import time
+from functools import lru_cache
+from sentence_transformers import SentenceTransformer
 
 # --- Configuration ---
-TOP_K = 50
+TOP_K = 20
 THRESHOLD_GOOD = 0.70
 DEFAULT_LLM_MODEL = "gemma3:4b"
 DEFAULT_LANGUAGE = "EN"
 DEFAULT_QUERY_MODE = "rag_only"
+MAX_CHARS = 8000  # Truncate LLM context if too long
 
 # --- Load Chroma Collection ---
 client = PersistentClient(path="./chroma_db")
 collection = client.get_collection(name="web_chunks")
 
-# --- Embedding Utility ---
+# --- Embedding Utility (cached + in-memory) ---
+embed_model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
+
+@lru_cache(maxsize=500)
+def cached_embed(text):
+    return embed_model.encode([text], convert_to_numpy=True, show_progress_bar=False)[0]
+
 def embed_texts(texts):
-    try:
-        result = subprocess.run(
-            ["python", "embed_worker.py"],
-            input=json.dumps(texts).encode("utf-8"),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True
-        )
-        return np.array(json.loads(result.stdout.decode("utf-8")))
-    except Exception as e:
-        print("❌ Embedding failed:", e)
-        return np.zeros((len(texts), 384))
+    return [cached_embed(text) for text in texts]
 
 # --- LLM Call ---
-import json
-
 def call_ollama_llm(prompt, model, temperature=0.1):
     try:
         payload = {
@@ -77,7 +69,6 @@ def call_ollama_llm(prompt, model, temperature=0.1):
     except Exception as e:
         return f"LLM API exception: {str(e)}"
 
-# --- RAG Logic ---
 # --- Traductions pour l'interface ---
 def get_translations(lang):
     if lang == "FR":
@@ -117,10 +108,11 @@ def get_translations(lang):
 
 # --- Adaptation dynamique du prompt ---
 def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
+    start_time = time.time()
     temperature = 0.1 if mode == "rag_only" else 0.4 if mode == "hybrid" else 0.7
 
     translations = get_translations(lang)
- 
+
     if lang == "FR":
         intro = "Vous êtes un assistant expert qui aide les utilisateurs à comprendre de la documentation technique."
         instruction_rag = "Fournissez une réponse détaillée, structurée et pratique uniquement à partir de la documentation fournie."
@@ -138,7 +130,8 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
 
         Answer strictly using the LLM's internal knowledge.
         """
-        return call_ollama_llm(prompt, llm_model, temperature=temperature), []
+        duration = time.time() - start_time
+        return call_ollama_llm(prompt, llm_model, temperature=temperature), [], duration
 
     query_emb = embed_texts([user_question])[0]
 
@@ -152,7 +145,6 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
     metas = results.get("metadatas", [[]])[0]
     scores = results.get("distances", [[]])[0]
 
-    # Filtrage strict des documents pertinents
     relevant_data = [
         (doc, meta, score)
         for doc, meta, score in zip(docs, metas, scores)
@@ -160,7 +152,8 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
     ]
 
     if not relevant_data:
-        return translations["no_relevant_docs"], []
+        duration = time.time() - start_time
+        return translations["no_relevant_docs"], [], duration
 
     page_map = {}
     for doc, meta, score in relevant_data:
@@ -175,7 +168,7 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
         for url, data in page_map.items()
     ]
 
-    all_text = "\n\n".join(p["text"] for p in page_contexts)
+    all_text = "\n\n".join(p["text"] for p in page_contexts)[:MAX_CHARS]
     all_urls = [p["url"] for p in page_contexts]
 
     prompt = f"""
@@ -194,7 +187,9 @@ Question: {user_question}
     if mode == "hybrid":
         prompt += f"\n{instruction_hybrid}"
 
-    return call_ollama_llm(prompt, llm_model, temperature=temperature), page_contexts
+    duration = time.time() - start_time
+    return call_ollama_llm(prompt, llm_model, temperature=temperature), page_contexts, duration
+
 
 # --- PDF with markdown rendering ---
 def generate_pdf(content, lang):
@@ -222,7 +217,7 @@ def generate_pdf(content, lang):
         target="_blank",
         className="btn btn-outline-info mt-3"
     )
-    
+
 # --- Dash App Setup ---
 app = Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])
 app.title = "RAG Assistant"
@@ -230,9 +225,7 @@ app.title = "RAG Assistant"
 app.layout = dbc.Container([
     dbc.Row([
         dbc.Col(html.H2("🤖 RAG Assistant", className="text-primary"), width=8),
-        dbc.Col(html.Img(src="/assets/logo_centrale.svg", height="60px"), 
-        width=4, 
-        style={"textAlign": "right"})
+        dbc.Col(html.Img(src="/assets/logo_centrale.svg", height="60px"), width=4, style={"textAlign": "right"})
     ], align="center"),
 
     html.Hr(),
@@ -292,8 +285,8 @@ app.layout = dbc.Container([
 
     dcc.Loading(
         id="loading-output",
-        type="circle",  # or "default", "dot"
-        color="#00ff99",  # optional: you can change the spinner color
+        type="circle",
+        color="#00ff99",
         children=[
             dbc.Card([html.Div(id="chat-history", children=[], style={"margin": "10px"})], color="dark", inverse=True),
             html.Div(id="pdf-download", className="mt-3 text-end")
@@ -301,7 +294,6 @@ app.layout = dbc.Container([
     ),
     dcc.Store(id="clear-question", data="")
 ], fluid=True, className="p-4", style={"backgroundColor": "#1e1e1e"})
-
 
 @app.callback(
     Output("chat-history", "children"),
@@ -325,12 +317,11 @@ def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, 
     if not question:
         return history + [html.Div("❗ Please enter a question.")], "", question
 
-    answer, source_data = process_query(question, llm_model, lang, mode)
+    answer, source_data, latency = process_query(question, llm_model, lang, mode)
     formatted_answer = dcc.Markdown(answer)
+    latency_info = html.Div(f"⏱️ Answered in {latency:.2f} seconds", className="text-muted", style={"fontSize": "0.8em", "marginTop": "5px"})
 
-    # Trier les sources par score décroissant (plus pertinent en premier)
     sorted_sources = sorted(source_data, key=lambda x: x["score"], reverse=True)
-
     if show_sources and sorted_sources:
         source_block = dcc.Markdown("\n".join([f"- {item['url']} (score: {item['score']})" for item in sorted_sources]))
     else:
@@ -345,15 +336,15 @@ def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, 
         html.H5("🧑 You:", className="text-warning"),
         html.Div(question, style={"whiteSpace": "pre-wrap", "marginBottom": "10px"}),
         html.H5("🤖 Assistant:", className="text-success"),
-        html.Div(formatted_answer, style={
-            "backgroundColor": "#2a2a2a",  # A bit lighter than black
+        html.Div([formatted_answer, latency_info], style={
+            "backgroundColor": "#2a2a2a",
             "padding": "10px",
             "borderRadius": "10px",
             "marginBottom": "10px"
         }),
         html.Div([html.Strong("Sources used:"), source_block], style={
             "marginTop": "10px",
-            "color": "#ccc",  # Lighter gray
+            "color": "#ccc",
             "fontSize": "0.85em",
             "backgroundColor": "#1e1e1e",
             "padding": "8px",
@@ -362,7 +353,6 @@ def update_chat(submit_clicks, clear_clicks, question, show_sources, llm_model, 
     ], style={"marginBottom": "30px"})
 
     return [new_exchange] + history, download_link, ""
-
 
 if __name__ == "__main__":
     app.run(debug=True)

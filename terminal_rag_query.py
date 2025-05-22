@@ -1,13 +1,19 @@
 import json
-import subprocess
 import numpy as np
 import requests
 import tempfile
 import os
 import webbrowser
+import time
 from markdown2 import markdown
 from xhtml2pdf import pisa
 from chromadb import PersistentClient
+from sentence_transformers import SentenceTransformer
+from functools import lru_cache
+from rich.console import Console
+from rich.markdown import Markdown
+
+console = Console()
 
 TOP_K = 50
 THRESHOLD_GOOD = 0.70
@@ -18,27 +24,23 @@ DEFAULT_QUERY_MODE = "rag_only"
 client = PersistentClient(path="./chroma_db")
 collection = client.get_collection(name="web_chunks")
 
+# --- Embedding with cache ---
+embed_model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
+
+@lru_cache(maxsize=500)
+def cached_embed(text):
+    return embed_model.encode([text], convert_to_numpy=True, show_progress_bar=False)[0]
+
 def embed_texts(texts):
-    try:
-        result = subprocess.run(
-            ["python", "embed_worker.py"],
-            input=json.dumps(texts).encode("utf-8"),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True
-        )
-        return np.array(json.loads(result.stdout.decode("utf-8")))
-    except Exception as e:
-        print("❌ Embedding failed:", e)
-        return np.zeros((len(texts), 384))
+    return [cached_embed(text) for text in texts]
 
 def call_ollama_llm(prompt, model, temperature=0.1):
     try:
         payload = {"model": model, "prompt": prompt, "options": {"temperature": temperature}}
         response = requests.post("http://localhost:11434/api/generate", json=payload, stream=True)
         if response.status_code == 200:
-            return ''.join(json.loads(line.decode("utf-8"))["response"]
-                           for line in response.iter_lines() if line and "response" in json.loads(line.decode("utf-8")))
+            return ''.join(json.loads(line.decode("utf-8"))['response']
+                           for line in response.iter_lines() if line and 'response' in json.loads(line.decode("utf-8")))
         else:
             return f"LLM API error: {response.status_code} - {response.text}"
     except Exception as e:
@@ -57,12 +59,14 @@ def get_translations(lang):
     }
 
 def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
+    start_time = time.time()
     temperature = 0.1 if mode == "rag_only" else 0.4 if mode == "hybrid" else 0.7
     t = get_translations(lang)
 
     if mode == "llm_only":
         prompt = f"{t['intro']}\n\nQuestion: {user_question}\n\nAnswer strictly using the LLM's internal knowledge."
-        return call_ollama_llm(prompt, llm_model, temperature), []
+        duration = time.time() - start_time
+        return call_ollama_llm(prompt, llm_model, temperature), [], duration
 
     query_emb = embed_texts([user_question])[0]
     results = collection.query(query_embeddings=[query_emb], n_results=TOP_K, include=["documents", "metadatas", "distances"])
@@ -74,7 +78,8 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
     relevant = [(doc, meta, score) for doc, meta, score in zip(docs, metas, scores) if score >= THRESHOLD_GOOD]
 
     if not relevant:
-        return t["no_docs"], []
+        duration = time.time() - start_time
+        return t["no_docs"], [], duration
 
     page_map = {}
     for doc, meta, score in relevant:
@@ -100,7 +105,8 @@ Question: {user_question}
     if mode == "hybrid":
         prompt += f"\n{t['instr_hybrid']}"
 
-    return call_ollama_llm(prompt, llm_model, temperature), page_contexts
+    duration = time.time() - start_time
+    return call_ollama_llm(prompt, llm_model, temperature), page_contexts, duration
 
 def generate_pdf(content, filename="rag_answer.pdf"):
     html_template = f"""
@@ -135,9 +141,11 @@ def main():
             break
 
         print(f"\n⏳ Mode: {mode.upper()} | Langue: {lang} — Please wait...")
-        answer, sources = process_query(question, llm_model, lang, mode)
+        answer, sources, latency = process_query(question, llm_model, lang, mode)
 
-        print("\n🤖 Assistant:\n", answer)
+        print("\n🤖 Assistant (rendered Markdown):\n")
+        console.print(Markdown(answer))
+        print(f"\n⏱️ Answered in {latency:.2f} seconds")
 
         if sources:
             print("\n🔗 Sources:")
@@ -146,7 +154,8 @@ def main():
 
         if input("\n💾 Export to PDF? (y/n): ").strip().lower() == "y":
             content = f"# Question\n{question}\n\n# Answer\n{answer}\n\n# Sources\n" + \
-                      "\n".join([f"- {s['url']} (score: {s['score']})" for s in sources])
+                      "\n".join([f"- {s['url']} (score: {s['score']})" for s in sources]) + \
+                      f"\n\n⏱️ Answered in {latency:.2f} seconds"
             path = generate_pdf(content)
             print(f"✅ PDF saved: {path}")
             try:
