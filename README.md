@@ -253,6 +253,9 @@ python search_engine_webApp.py
 * Toggle modes: Hybrid, RAG-only, or LLM-only
 * Download responses as PDFs
 * View sources with similarity scores
+* **Displays time taken for each response**
+* **Embeddings are now generated in-memory with caching for better performance**
+* **LLM and vector search work together for accurate, fast answers**
 
 ## 🧠 Architecture
 
