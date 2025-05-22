@@ -30,11 +30,16 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
 # === Logger Setup ===
 os.makedirs("logs", exist_ok=True)
 log_filename = os.path.join("logs", f"pipeline_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
 logging.basicConfig(
     level=logging.INFO,
+    #level=logging.DEBUG,
     format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[
         logging.StreamHandler(),
@@ -111,7 +116,7 @@ Expected JSON format:
                 continue
 
             try:
-                response = requests.get(url)
+                response = requests.get(url, headers=headers)
                 content_type = response.headers.get('Content-Type', '')
                 if not content_type.startswith("text/html"):
                     continue
