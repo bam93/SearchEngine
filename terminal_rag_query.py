@@ -16,6 +16,7 @@ from rich.markdown import Markdown
 console = Console()
 
 TOP_K = 50
+TOP_K_RELEVANT = 5
 THRESHOLD_GOOD = 0.70
 DEFAULT_LLM_MODEL = "gemma3:4b"
 DEFAULT_LANGUAGE = "EN"
@@ -80,6 +81,9 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
     if not relevant:
         duration = time.time() - start_time
         return t["no_docs"], [], duration
+
+    # ⏱️ Sélection des n meilleurs documents seulement
+    relevant = sorted(relevant, key=lambda x: x[2], reverse=True)[:TOP_K_RELEVANT]
 
     page_map = {}
     for doc, meta, score in relevant:

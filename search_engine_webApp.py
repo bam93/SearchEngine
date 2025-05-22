@@ -29,6 +29,8 @@ DEFAULT_LLM_MODEL = "gemma3:4b"
 DEFAULT_LANGUAGE = "EN"
 DEFAULT_QUERY_MODE = "rag_only"
 MAX_CHARS = 8000  # Truncate LLM context if too long
+TOP_K_RELEVANT = 5  # Number of most relevant documents to inject in the prompt
+
 
 # --- Load Chroma Collection ---
 client = PersistentClient(path="./chroma_db")
@@ -154,6 +156,9 @@ def process_query(user_question, llm_model, lang, mode=DEFAULT_QUERY_MODE):
     if not relevant_data:
         duration = time.time() - start_time
         return translations["no_relevant_docs"], [], duration
+
+    # Keep only the N most relevant documents
+    relevant_data = sorted(relevant_data, key=lambda x: x[2], reverse=True)[:TOP_K_RELEVANT]
 
     page_map = {}
     for doc, meta, score in relevant_data:
